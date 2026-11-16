@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# Environment and secrets (names only belong in .env.example)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Logs and local state
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Local run artifacts (Lathe sandboxes and worktrees)
+.lathe-local/
+worktrees/
+
+# NOTE: never ignore .kiro/. Kiroween rules require it in the repository.

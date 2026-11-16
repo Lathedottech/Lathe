@@ -1,0 +1,18 @@
+-- Owner/migration role: owns schema objects, can log in, no superuser, no BYPASSRLS.
+CREATE ROLE :"owner_role" LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB PASSWORD :'owner_pw';
+
+-- App role: NOT an owner. Login allowed, no superuser, no BYPASSRLS.
+CREATE ROLE :"app_role" LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB NOINHERIT PASSWORD :'app_pw';
+
+REVOKE ALL ON DATABASE :"dbname" FROM PUBLIC;
+GRANT CONNECT ON DATABASE :"dbname" TO :"owner_role", :"app_role";
+
+ALTER SCHEMA public OWNER TO :"owner_role";
+REVOKE ALL ON SCHEMA public FROM PUBLIC;
+GRANT USAGE ON SCHEMA public TO :"app_role";
+
+-- Tables the owner creates later are reachable by the app role with DML only.
+ALTER DEFAULT PRIVILEGES FOR ROLE :"owner_role" IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO :"app_role";
+ALTER DEFAULT PRIVILEGES FOR ROLE :"owner_role" IN SCHEMA public
+  GRANT USAGE, SELECT ON SEQUENCES TO :"app_role";

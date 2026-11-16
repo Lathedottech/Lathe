@@ -1,0 +1,49 @@
+name: Bug report
+description: Something in Lathe does not work as documented.
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Security issues go to private vulnerability reporting, not here.
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact commands or actions, in order.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include the full error output.
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: e.g. Ubuntu 24.04, Windows 11 with WSL2, macOS 15
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node version
+      placeholder: output of node --version
+    validations:
+      required: true
+  - type: input
+    id: pnpm
+    attributes:
+      label: pnpm version
+      placeholder: output of pnpm --version
+    validations:
+      required: true

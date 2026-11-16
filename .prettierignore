@@ -1,0 +1,9 @@
+node_modules
+pnpm-lock.yaml
+dist
+coverage
+# Docs and agent files are not formatted by this task
+docs
+.kiro
+*.md
+comments.json

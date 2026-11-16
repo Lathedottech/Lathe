@@ -1,0 +1,365 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "1.1 Create the temp working area and evidence recorder": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871869653
+      },
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871878053
+      },
+      {
+        "executionId": "deb03443-ba3e-4215-996b-006dd9f07611",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794872068515
+      }
+    ],
+    "1.2 Record the baseline manifest before any workspace change": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871869717
+      }
+    ],
+    "2.1 **HUMAN GATE G1**: ask the Human_Operator for every input and decision": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871869810
+      }
+    ],
+    "2.2 Validate the supplied inputs": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871869865
+      }
+    ],
+    "3. Checkpoint: inputs collected": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871869909
+      }
+    ],
+    "4.1 **HUMAN GATE**: install or confirm the secret scanner": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871869965
+      }
+    ],
+    "4.2 Run the working-tree preflight checks": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871870013
+      }
+    ],
+    "5. Checkpoint: preflight passed": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871870063
+      }
+    ],
+    "6.1 Apply the `comments.json` decision (owner: `devops`, or the Human_Operator)": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871870107
+      }
+    ],
+    "6.2 Create `LICENSE` (owner: `documentation`)": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871870155
+      }
+    ],
+    "6.3 Add the `license` field to root `package.json` (owner: `devops`, or the Human_Operator)": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871870204
+      }
+    ],
+    "6.4 Create `CODE_OF_CONDUCT.md` (owner: `documentation`)": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871870254
+      }
+    ],
+    "6.5 Update the Reporting section of `SECURITY.md` (owner: `security`)": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871870300
+      }
+    ],
+    "6.6 Create the `.github` templates (owner: `devops`, or the Human_Operator)": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871870349
+      }
+    ],
+    "6.7 Generate the social preview image (owner: `documentation`)": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871870399
+      }
+    ],
+    "6.8 Write the README (owner: `documentation`)": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871870467
+      }
+    ],
+    "6.9 Fix links in `CONTRIBUTING.md` (owner: `documentation`)": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871870522
+      }
+    ],
+    "7. Checkpoint: **HUMAN GATE G2**, artifacts approved": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871870576
+      }
+    ],
+    "8.1 Stage the approved files and run the index checks": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871870626
+      }
+    ],
+    "8.2 **HUMAN GATE**: report local-data matches and collect approvals": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871870686
+      }
+    ],
+    "8.3 Pre-validate the Quickstart on an export of the staged index": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871870743
+      }
+    ],
+    "8.4 Check every README link, image path and anchor": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871870797
+      }
+    ],
+    "9. Checkpoint: pre-publish checks passed": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871870851
+      }
+    ],
+    "10.1 **HUMAN GATE G3**: approve the exact Commit_Set and commit messages": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871870900
+      }
+    ],
+    "10.2 Set the local git identity": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871870969
+      }
+    ],
+    "10.3 Create commit 1 (scaffold, Kiro config, license)": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871871023
+      }
+    ],
+    "10.4 Create commit 2 (architecture and docs)": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871871084
+      }
+    ],
+    "10.5 Create commit 3 (README and community files)": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871871136
+      }
+    ],
+    "11.1 Verify identity, branch and global configuration": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871871186
+      }
+    ],
+    "11.2 Run the Quickstart in a fresh clone of committed `main`": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871871306
+      }
+    ],
+    "11.3 Re-check README links against the committed tree": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871871357
+      }
+    ],
+    "11.4 Compare the baseline manifest with HEAD": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871871416
+      }
+    ],
+    "11.5 Scan the full commit history": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871871469
+      }
+    ],
+    "12. Checkpoint: commits created and fresh-clone verification passed": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871871519
+      }
+    ],
+    "13.1 **HUMAN GATE G4**: confirm the name, check it is free, create the repository": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871871573
+      }
+    ],
+    "13.2 **HUMAN GATE G5**: approve description and topics, then set them": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871871632
+      }
+    ],
+    "13.3 Enable private vulnerability reporting": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871871685
+      }
+    ],
+    "14.1 **HUMAN GATE G6**: confirm the first push, add the remote, push `main`": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871871735
+      }
+    ],
+    "14.2 Confirm the default branch": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871871788
+      }
+    ],
+    "15. Checkpoint: remote created and pushed": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871871836
+      }
+    ],
+    "16.1 Verify repository metadata, license and `.kiro`": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871871889
+      }
+    ],
+    "16.2 Verify push state and README images": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871871960
+      }
+    ],
+    "16.3 Verify the community profile": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871872037
+      }
+    ],
+    "16.4 Verify scope limits on the remote": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871872090
+      }
+    ],
+    "17.1 **HUMAN GATE G7**: upload the social preview": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871872141
+      }
+    ],
+    "17.2 **HUMAN GATE G8**: visual check of the repository page": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871872191
+      }
+    ],
+    "18. Checkpoint: post-publish checks passed": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871872239
+      }
+    ],
+    "19.1 Assemble the launch report": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871872297
+      }
+    ],
+    "19.2 **HUMAN GATE G9**: approve the report, commit it alone, push, re-check state": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871872348
+      }
+    ],
+    "20. Final checkpoint: launch report committed": [
+      {
+        "executionId": "712020a5-9204-4774-9d38-a7e223603461",
+        "chatSessionId": "sess_b59114c0-fa3a-4c5b-b3b1-876c19c3791d",
+        "timestamp": 1794871872402
+      }
+    ]
+  }
+}
