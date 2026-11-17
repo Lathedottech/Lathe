@@ -1,3 +1,4 @@
 packages:
   - packages/application-foundation
   - packages/verification-harness
+  - packages/shared-contracts
