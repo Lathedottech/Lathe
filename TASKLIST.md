@@ -10,27 +10,29 @@ People: **A** (lead, architect) and **B** (fullstack) split the tasks, see `docs
 
 ## Status
 
-Last updated: 2026-11-15. Only `documentation` edits this section.
+Last updated: 2026-11-17, recorded by the coordinator on behalf of `documentation` from the reports and reviews linked below.
 
 **Rule:** a task is **Done** only with a report in `docs/reports/` containing real command output AND an approving review in `docs/reviews/`. Allowed values: Not started, In progress, Reported, In review, Done, Blocked, Failed.
-Only tasks that have started are listed. **Every task not listed is Not started.** No review file exists yet in `docs/reviews/`, so no task is Done.
+Only tasks that have started are listed. **Every task not listed is Not started.**
 
 | ID | Status | Evidence | Open items |
 |---|---|---|---|
-| P0-01 Repository init | In progress | `git init -b main`; `.gitignore` does not ignore `.kiro/` (`git check-ignore .kiro` returned nothing); `.nvmrc` (22); `.editorconfig`; `.gitattributes` (LF for scripts and configs) | LICENSE not created (needs copyright holder and MIT confirmation from the project lead). No commit and no GitHub remote yet: git `user.name`/`user.email` are not configured on this machine and the public GitHub repo is not created |
-| P0-02 Lean monorepo | Reported | [docs/reports/P0-02-devops.md](docs/reports/P0-02-devops.md). Coordinator re-ran on Node v24.14.0 / pnpm 9.15.9: `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm lint`, `pnpm test` (2 files, 2 tests passed), `pnpm format:check`, all exit 0 | Postgres start and role check (`NOSUPERUSER`, `NOBYPASSRLS`) not run: Docker Desktop is stopped. Not tested on Node 22. Smoke tests only prove the runner works. `typescript` pinned to 6.0.3 because of the typescript-eslint 8.73.0 peer range. Needs architect review before Done |
-| P0-03 ADRs D1-D6 | Reported | [docs/adr/README.md](docs/adr/README.md), ADRs [0001](docs/adr/0001-typescript-modular-monolith.md) to [0006](docs/adr/0006-docker-sandbox.md), [docs/reports/P0-03-architect.md](docs/reports/P0-03-architect.md) | Project lead approval required. ADR 0003 (Kiro auth) is Proposed and blocked on P0-04. ADRs 0004 and 0006 need security review. No task owns import-boundary enforcement yet |
-| P0-04 Kiro go/no-go spike | Blocked | none | `kiro-cli whoami` returns "Not logged in". Installed CLI is kiro-cli-chat 2.7.0, and Markdown agent profiles and newer ACP features need a newer CLI. Docker Desktop and WSL Ubuntu are stopped. The project lead must sign in or provide credentials and start Docker and WSL |
-| P0-08 Agent team setup | In review | `.kiro/agents/*.md` (8 files), `.kiro/steering/*.md` (6 files), [AGENTS.md](AGENTS.md), `docs/agents/*` | Awaiting project lead approval. Profiles not yet loaded in Kiro IDE. Deny rules not yet tested |
+| P0-01 Repository init | In progress | Public repo [ousssamarahmani/Lathe](https://github.com/ousssamarahmani/Lathe), first commit `132716f`; MIT `LICENSE` detected by GitHub; `.kiro/` committed and not ignored; `.nvmrc`, `.editorconfig`, `.gitattributes` | No task report or review file yet. Social preview and account avatar uploads are manual and unconfirmed |
+| P0-02 Lean monorepo | Done | [report](docs/reports/P0-02-devops.md), [review](docs/reviews/P0-02-architect.md) (approve, 2026-11-17): install, typecheck, lint, test, format all exit 0; planted type error and failing test both caught | Condition C1: Postgres roles check (`NOSUPERUSER`, `NOBYPASSRLS`) not run because Docker is stopped; blocks P1-02. Node 22 not tested |
+| P0-03 ADRs D1-D6 | Done | [report](docs/reports/P0-03-architect.md), [approval](docs/reviews/P0-03-human.md) by the project lead, bound to a content hash | ADR 0003 stays Proposed until P0-04. ADRs 0004 and 0006 still need `security` review |
+| P0-04 Kiro go/no-go spike | Blocked | Re-checked 2026-11-17: `kiro-cli-chat 2.7.0`, `kiro-cli whoami` returns "Not logged in"; Docker Desktop not running | Project lead must update the Kiro CLI, sign in, and start Docker Desktop and WSL |
+| P0-07 Interface contracts C1-C4 | Done | [report](docs/reports/P0-07-architect.md), [approval](docs/reviews/P0-07-human.md) by the project lead: `packages/shared-contracts`, C2-C4 frozen v1, C1 draft; typecheck, lint, test (58 passed), format all exit 0; mutation probe caught | Consumer acknowledgments still pending in [handoff](docs/handoffs/architect-to-consumers-contracts-v1.md). C1 final in P1-06 |
+| P0-08 Agent team setup | Done | [approval](docs/reviews/P0-08-human.md) by the project lead, bound to a content hash | Profiles not yet loaded in Kiro; deny rules untested (P0-09) |
+| P1-01 Schema, migrations, audit table | In progress | Branch `task/P1-01-schema-audit` (B), commit `d871d78` | No report or review yet |
 
-Not started: P0-05, P0-06, P0-07. P0-06 is also blocked on the CODEOWNERS GitHub usernames of persons A and B and on the GitHub repository existing.
+Not started: P0-05, P0-06, P0-09, P0-10. P0-06 needs the CODEOWNERS GitHub usernames of persons A and B.
 
 ### Next dependency-ready tasks
 
-- P0-07 (interface contracts): needs P0-02 reviewed.
-- P0-05 (dev-time hooks and specs): no dependency beyond P0-01, which is in progress.
-- P1-01 (schema, migrations, audit table): after P0-02 is Done.
-
+- P2-01 (verification runner): P0-02 Done, uses C3.
+- P3-01 (Engine schema and spec/plan types): P0-02 Done, uses C4.
+- P0-10 (import-boundary enforcement, B): P0-02 Done.
+- P0-05 (dev-time hooks and specs).
 ---
 
 ## P0. Bootstrap and Kiro go/no-go
