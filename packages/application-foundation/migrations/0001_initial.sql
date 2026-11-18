@@ -1,7 +1,7 @@
 -- P1-01: organizations, memberships and append-only audit events.
--- Run this migration as LATHE_DB_OWNER_ROLE with psql variable:
---   psql -v app_role="$LATHE_DB_APP_ROLE" -f 0001_initial.sql
--- The app role variable is required because its name is environment-specific.
+-- Applied by the migration runner (src/db/migrate.ts) as LATHE_DB_OWNER_ROLE.
+-- The runner replaces :"app_role" with the quoted app role name, so the file
+-- also still runs by hand with: psql -v app_role="$LATHE_DB_APP_ROLE" -f 0001_initial.sql
 -- gen_random_uuid() is built into PostgreSQL 13+, so no extension is needed
 -- (the owner role has no CREATE privilege on the database and cannot add one).
 

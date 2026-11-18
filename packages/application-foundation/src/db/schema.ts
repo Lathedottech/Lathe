@@ -1,33 +1,32 @@
 import { index, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { tenantTable } from '../tenancy/tenant-table.js';
+import { timestamps } from './columns.js';
+import { organizations } from './organizations.js';
 
-const timestamps = {
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-} as const;
+export { organizations };
 
-export const organizations = pgTable('organizations', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  name: text('name').notNull(),
-  ...timestamps,
-});
-
-export const memberships = pgTable(
+/** Tenant table. `user_id` gets its foreign key when auth tables land (P1-03). */
+export const memberships = tenantTable(
   'memberships',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organizations.id, { onDelete: 'cascade' }),
     userId: uuid('user_id').notNull(),
     role: text('role').notNull(),
-    ...timestamps,
+    ...timestamps(),
   },
-  (table) => ({
-    orgUserUnique: uniqueIndex('memberships_org_id_user_id_unique').on(table.orgId, table.userId),
-    orgIndex: index('memberships_org_id_idx').on(table.orgId),
-  }),
+  (table) => [
+    uniqueIndex('memberships_org_id_user_id_unique').on(table.orgId, table.userId),
+    index('memberships_org_id_idx').on(table.orgId),
+    index('memberships_user_id_idx').on(table.userId),
+  ],
 );
 
+/**
+ * Append-only. `org_id` is nullable because a request denied before membership
+ * resolution has no org. Under RLS, rows are readable only inside `withTenant`
+ * for their org; rows without an org can be inserted but not read back, so do not
+ * use `RETURNING` when inserting them.
+ */
 export const auditEvents = pgTable(
   'audit_events',
   {
@@ -41,10 +40,10 @@ export const auditEvents = pgTable(
     requestId: uuid('request_id').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => ({
-    orgIndex: index('audit_events_org_id_idx').on(table.orgId),
-    requestIndex: index('audit_events_request_id_idx').on(table.requestId),
-  }),
+  (table) => [
+    index('audit_events_org_id_idx').on(table.orgId),
+    index('audit_events_request_id_idx').on(table.requestId),
+  ],
 );
 
 export type Organization = typeof organizations.$inferSelect;

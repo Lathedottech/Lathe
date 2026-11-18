@@ -5,50 +5,65 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { auditEvents, memberships, organizations } from './schema.js';
 import { connectAs, expectPgError, roleName } from './test-db.js';
 
+// PostgreSQL error codes.
 const INSUFFICIENT_PRIVILEGE = '42501';
 const UNIQUE_VIOLATION = '23505';
 const FOREIGN_KEY_VIOLATION = '23503';
 const CHECK_VIOLATION = '23514';
 
 let app: pg.Client;
-let owner: pg.Client;
 const createdOrgIds: string[] = [];
 const requestId = randomUUID();
 
 beforeAll(async () => {
   app = await connectAs('app');
-  owner = await connectAs('owner');
 });
 
 afterAll(async () => {
-  await owner?.query('DELETE FROM audit_events WHERE request_id = $1', [requestId]);
-  if (createdOrgIds.length > 0) {
-    await owner?.query('DELETE FROM organizations WHERE id = ANY($1::uuid[])', [createdOrgIds]);
+  // Audit rows are append-only by design and stay; they are tagged with requestId.
+  for (const orgId of createdOrgIds) {
+    await inOrg(orgId, () => app.query('DELETE FROM organizations WHERE id = $1', [orgId]));
   }
   await app?.end();
-  await owner?.end();
 });
 
+/**
+ * Runs `fn` in a transaction scoped to `orgId`, the way `withTenant` does, using
+ * raw SQL so these schema tests do not depend on the tenancy module.
+ */
+async function inOrg<T>(orgId: string, fn: () => Promise<T>): Promise<T> {
+  await app.query('BEGIN');
+  try {
+    await app.query("SELECT set_config('app.org_id', $1, true)", [orgId]);
+    const result = await fn();
+    await app.query('COMMIT');
+    return result;
+  } catch (error) {
+    await app.query('ROLLBACK');
+    throw error;
+  }
+}
+
 async function createOrg(name: string): Promise<string> {
-  const result = await app.query<{ id: string }>(
-    'INSERT INTO organizations (name) VALUES ($1) RETURNING id',
-    [name],
+  const id = randomUUID();
+  await inOrg(id, () =>
+    app.query('INSERT INTO organizations (id, name) VALUES ($1, $2)', [id, name]),
   );
-  const id = result.rows[0]?.id;
-  if (!id) throw new Error('organization insert returned no id');
   createdOrgIds.push(id);
   return id;
 }
 
-async function insertAudit(outcome: string): Promise<string> {
-  const result = await app.query<{ id: string }>(
-    `INSERT INTO audit_events (action, resource_type, outcome, request_id)
-     VALUES ('test.write', 'test', $1, $2) RETURNING id`,
-    [outcome, requestId],
-  );
-  const id = result.rows[0]?.id;
-  if (!id) throw new Error('audit insert returned no id');
-  return id;
+async function insertAudit(orgId: string, outcome: string): Promise<string> {
+  return inOrg(orgId, async () => {
+    const result = await app.query<{ id: string }>(
+      `INSERT INTO audit_events (org_id, action, resource_type, outcome, request_id)
+       VALUES ($1, 'test.write', 'test', $2, $3) RETURNING id`,
+      [orgId, outcome, requestId],
+    );
+    const id = result.rows[0]?.id;
+    if (!id) throw new Error('audit insert returned no id');
+    return id;
+  });
 }
 
 describe('database roles', () => {
@@ -72,6 +87,11 @@ describe('database roles', () => {
 
   it('app role cannot create tables', async () => {
     const code = await expectPgError(() => app.query('CREATE TABLE p1_01_should_fail (id int)'));
+    expect(code).toBe(INSUFFICIENT_PRIVILEGE);
+  });
+
+  it('app role cannot read or write the migrations table', async () => {
+    const code = await expectPgError(() => app.query('SELECT name FROM schema_migrations'));
     expect(code).toBe(INSUFFICIENT_PRIVILEGE);
   });
 });
@@ -100,29 +120,37 @@ describe('schema matches the Drizzle definition', () => {
 
 describe('audit_events is append-only for the app role', () => {
   it('allows INSERT and SELECT', async () => {
-    const id = await insertAudit('allowed');
-    const result = await app.query('SELECT outcome FROM audit_events WHERE id = $1', [id]);
+    const orgId = await createOrg('p1-01 audit read');
+    const id = await insertAudit(orgId, 'allowed');
+    const result = await inOrg(orgId, () =>
+      app.query('SELECT outcome FROM audit_events WHERE id = $1', [id]),
+    );
     expect(result.rows).toEqual([{ outcome: 'allowed' }]);
   });
 
   it('denies UPDATE', async () => {
-    const id = await insertAudit('allowed');
+    const orgId = await createOrg('p1-01 audit update');
+    const id = await insertAudit(orgId, 'allowed');
     const code = await expectPgError(() =>
-      app.query("UPDATE audit_events SET outcome = 'denied' WHERE id = $1", [id]),
+      inOrg(orgId, () =>
+        app.query("UPDATE audit_events SET outcome = 'denied' WHERE id = $1", [id]),
+      ),
     );
     expect(code).toBe(INSUFFICIENT_PRIVILEGE);
   });
 
   it('denies DELETE', async () => {
-    const id = await insertAudit('allowed');
+    const orgId = await createOrg('p1-01 audit delete');
+    const id = await insertAudit(orgId, 'allowed');
     const code = await expectPgError(() =>
-      app.query('DELETE FROM audit_events WHERE id = $1', [id]),
+      inOrg(orgId, () => app.query('DELETE FROM audit_events WHERE id = $1', [id])),
     );
     expect(code).toBe(INSUFFICIENT_PRIVILEGE);
   });
 
   it('rejects an unknown outcome', async () => {
-    const code = await expectPgError(() => insertAudit('maybe'));
+    const orgId = await createOrg('p1-01 audit outcome');
+    const code = await expectPgError(() => insertAudit(orgId, 'maybe'));
     expect(code).toBe(CHECK_VIOLATION);
   });
 });
@@ -132,20 +160,25 @@ describe('memberships constraints', () => {
     const orgId = await createOrg('p1-01 duplicate test');
     const userId = randomUUID();
     const insert = () =>
-      app.query("INSERT INTO memberships (org_id, user_id, role) VALUES ($1, $2, 'member')", [
-        orgId,
-        userId,
-      ]);
+      inOrg(orgId, () =>
+        app.query("INSERT INTO memberships (org_id, user_id, role) VALUES ($1, $2, 'member')", [
+          orgId,
+          userId,
+        ]),
+      );
     await insert();
     expect(await expectPgError(insert)).toBe(UNIQUE_VIOLATION);
   });
 
   it('rejects a membership in an organization that does not exist', async () => {
+    const missingOrg = randomUUID();
     const code = await expectPgError(() =>
-      app.query("INSERT INTO memberships (org_id, user_id, role) VALUES ($1, $2, 'member')", [
-        randomUUID(),
-        randomUUID(),
-      ]),
+      inOrg(missingOrg, () =>
+        app.query("INSERT INTO memberships (org_id, user_id, role) VALUES ($1, $2, 'member')", [
+          missingOrg,
+          randomUUID(),
+        ]),
+      ),
     );
     expect(code).toBe(FOREIGN_KEY_VIOLATION);
   });
