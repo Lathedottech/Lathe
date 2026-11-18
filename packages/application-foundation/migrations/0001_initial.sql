@@ -2,8 +2,8 @@
 -- Run this migration as LATHE_DB_OWNER_ROLE with psql variable:
 --   psql -v app_role="$LATHE_DB_APP_ROLE" -f 0001_initial.sql
 -- The app role variable is required because its name is environment-specific.
-
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+-- gen_random_uuid() is built into PostgreSQL 13+, so no extension is needed
+-- (the owner role has no CREATE privilege on the database and cannot add one).
 
 CREATE TABLE organizations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -44,7 +44,3 @@ CREATE INDEX audit_events_request_id_idx ON audit_events (request_id);
 -- events are append-only, so remove mutation privileges from that role.
 REVOKE UPDATE, DELETE ON TABLE audit_events FROM :"app_role";
 REVOKE UPDATE, DELETE ON TABLE audit_events FROM PUBLIC;
-
--- Make the audit table append-only at the database privilege layer. The owner
--- role retains ownership and can write migrations, but the app role cannot
--- update or delete events.
