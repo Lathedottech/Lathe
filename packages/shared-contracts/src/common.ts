@@ -7,7 +7,7 @@
 import { z } from 'zod';
 
 /** Version of the contract set. A breaking change bumps the major version. */
-export const CONTRACT_VERSION = '1.0.0' as const;
+export const CONTRACT_VERSION = '1.1.0' as const;
 
 /** ISO 8601 timestamp with an explicit offset, for example `2026-11-17T10:00:00Z`. */
 export const IsoDateTime = z.iso.datetime({ offset: true });
@@ -57,6 +57,8 @@ export const RunId = z.uuid().brand<'RunId'>();
 export type RunId = z.infer<typeof RunId>;
 export const ApprovalId = z.uuid().brand<'ApprovalId'>();
 export type ApprovalId = z.infer<typeof ApprovalId>;
+export const MembershipId = z.uuid().brand<'MembershipId'>();
+export type MembershipId = z.infer<typeof MembershipId>;
 export const RequestId = z.uuid().brand<'RequestId'>();
 export type RequestId = z.infer<typeof RequestId>;
 
