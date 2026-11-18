@@ -1,0 +1,19 @@
+# Code owners (task P0-06). Paths match docs/agents/team.md §3.
+# GitHub never counts the PR author's own approval, so listing both people
+# means the other person must approve. Branch protection on `main` must have
+# "Require review from Code Owners" enabled for this file to take effect.
+#
+# @ousssamarahmani = person A (lead, architect)
+# @HammaBG         = person B (fullstack)
+
+# Protected: verification harness and its self-test.
+/packages/verification-harness/   @ousssamarahmani @HammaBG
+/tests/harness-selftest/          @ousssamarahmani @HammaBG
+
+# Protected: CI, workflows and this file.
+/.github/                         @ousssamarahmani @HammaBG
+
+# Security-critical foundation code: identity, tenancy, authorization.
+/packages/application-foundation/src/auth/      @ousssamarahmani @HammaBG
+/packages/application-foundation/src/tenancy/   @ousssamarahmani @HammaBG
+/packages/application-foundation/src/authz/     @ousssamarahmani @HammaBG
