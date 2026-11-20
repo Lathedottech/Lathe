@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { writeAudit } from '../audit/audit.js';
 import { sessions } from '../auth/schema.js';
-import { auditEvents, memberships, organizations } from '../db/schema.js';
+import { memberships, organizations } from '../db/schema.js';
 import { parseOrgId, type OrgId, type UserId } from '../tenancy/ids.js';
 import { withTenant, withUser, type TenantTx } from '../tenancy/with-tenant.js';
 import { OrgError } from './errors.js';
@@ -34,12 +35,18 @@ export interface Caller {
   readonly requestId: string;
 }
 
-/**
- * Org-scoped operations below take `orgId` as an argument. It must be the
- * caller's active org from the session (`Principal.activeOrgId`), never a value
- * from the request. Each operation also checks that the caller is a member of
- * that org and fails with `not_found` otherwise; permission checks (who may
- * invite, change roles, remove) are added by `defineAction` in P1-05.
+/*
+ * Org-scoped operations take `orgId` as an argument. It must be the caller's
+ * active org from the session (`Principal.activeOrgId`), never a value from the
+ * request.
+ *
+ * Each has two forms:
+ * - `xInTx(tx, ...)`: the change only, inside a tenant transaction the caller
+ *   already opened and checked. `defineAction` (P1-05) uses these, so the
+ *   membership check, permission check, change and audit share one transaction.
+ * - `x(deps, ...)`: opens its own transaction, checks the caller is a member
+ *   and writes the audit event. No permission check: do not expose it to
+ *   requests directly; use the actions from `defineOrgActions` instead.
  */
 
 export interface MembershipSummary {
@@ -62,31 +69,8 @@ function checkName(name: string): string {
   return trimmed;
 }
 
-async function audit(
-  tx: TenantTx,
-  event: {
-    caller: Caller;
-    orgId: OrgId | null;
-    action: string;
-    resourceType: string;
-    resourceId: string | null;
-    outcome: 'success' | 'denied';
-  },
-): Promise<void> {
-  // No RETURNING: rows without an org are insertable but not readable (migration 0002).
-  await tx.insert(auditEvents).values({
-    actorId: event.caller.userId,
-    orgId: event.orgId,
-    action: event.action,
-    resourceType: event.resourceType,
-    resourceId: event.resourceId,
-    outcome: event.outcome,
-    requestId: event.caller.requestId,
-  });
-}
-
-/** The caller's membership in the current tenant transaction's org, or `not_found`. */
-async function requireMembership(tx: TenantTx, orgId: OrgId, userId: UserId) {
+/** The membership of `userId` in the current tenant transaction's org, or `not_found`. */
+export async function requireMembership(tx: TenantTx, orgId: OrgId, userId: UserId) {
   const [row] = await tx
     .select({ id: memberships.id, role: memberships.role })
     .from(memberships)
@@ -95,17 +79,22 @@ async function requireMembership(tx: TenantTx, orgId: OrgId, userId: UserId) {
   return row;
 }
 
-function isLastOwnerViolation(error: unknown): boolean {
-  for (let e: unknown = error; e instanceof Error; e = e.cause) {
-    if ((e as { constraint?: unknown }).constraint === 'memberships_last_owner') return true;
-  }
-  return false;
+/** A membership of the current org by id, or `not_found`. */
+export async function findMembershipInTx(tx: TenantTx, orgId: OrgId, membershipId: string) {
+  const [row] = await tx
+    .select({ id: memberships.id, role: memberships.role, userId: memberships.userId })
+    .from(memberships)
+    .where(and(eq(memberships.id, membershipId), eq(memberships.orgId, orgId)));
+  if (!row) throw new OrgError('not_found', 'membership not found');
+  return row;
 }
 
-function isUniqueViolation(error: unknown, constraint: string): boolean {
+function hasConstraint(error: unknown, constraint: string, code?: string): boolean {
   for (let e: unknown = error; e instanceof Error; e = e.cause) {
     const pgError = e as { code?: unknown; constraint?: unknown };
-    if (pgError.code === '23505' && pgError.constraint === constraint) return true;
+    if (pgError.constraint === constraint && (code === undefined || pgError.code === code)) {
+      return true;
+    }
   }
   return false;
 }
@@ -114,7 +103,7 @@ async function mapLastOwner<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (error) {
-    if (isLastOwnerViolation(error)) {
+    if (hasConstraint(error, 'memberships_last_owner')) {
       throw new OrgError('last_owner', 'an organization must keep at least one owner', {
         cause: error,
       });
@@ -139,13 +128,14 @@ export async function createOrganization(
       .values({ orgId, userId: caller.userId, role: OWNER_ROLE })
       .returning({ id: memberships.id });
     if (!m) throw new Error('membership insert returned no row');
-    await audit(tx, {
-      caller,
+    await writeAudit(tx, {
+      actorId: caller.userId,
       orgId,
       action: 'organization.create',
       resourceType: 'organization',
       resourceId: orgId,
       outcome: 'success',
+      requestId: caller.requestId,
     });
     return { orgId, membershipId: m.id };
   });
@@ -172,44 +162,61 @@ export async function listMyMemberships(
   });
 }
 
-/**
- * Creates an invitation to `orgId` for `role`. Returns the token once; only its
- * hash is stored. The link the app builds from it is a secret: never log it.
- */
-export async function createInvitation(
-  deps: OrgDeps,
+export interface CreatedInvitation {
+  readonly invitationId: string;
+  /** Shown once. Only its hash is stored. The link built from it is a secret: never log it. */
+  readonly token: string;
+  readonly expiresAt: Date;
+}
+
+/** The invitation insert, inside an already-checked tenant transaction. */
+export async function createInvitationInTx(
+  tx: TenantTx,
+  deps: Pick<OrgDeps, 'newToken'>,
   caller: Caller,
   orgId: OrgId,
-  input: { readonly role: string; readonly ttlSeconds?: number },
-): Promise<{ invitationId: string; token: string; expiresAt: Date }> {
+  input: { readonly role: string; readonly ttlSeconds?: number | undefined },
+): Promise<CreatedInvitation> {
   const role = checkRole(input.role);
   const ttl = input.ttlSeconds ?? DEFAULT_INVITE_TTL_SECONDS;
   if (!Number.isInteger(ttl) || ttl < 60 || ttl > 30 * 24 * 60 * 60) {
     throw new OrgError('validation_failed', 'invite lifetime must be 1 minute to 30 days');
   }
   const token = (deps.newToken ?? newInviteToken)();
+  const [row] = await tx
+    .insert(invitations)
+    .values({
+      orgId,
+      role,
+      tokenHash: hashInviteToken(token),
+      invitedBy: caller.userId,
+      expiresAt: sql`now() + make_interval(secs => ${ttl})`,
+    })
+    .returning({ id: invitations.id, expiresAt: invitations.expiresAt });
+  if (!row) throw new Error('invitation insert returned no row');
+  return { invitationId: row.id, token, expiresAt: row.expiresAt };
+}
+
+/** Creates an invitation to `orgId` for `role`. */
+export async function createInvitation(
+  deps: OrgDeps,
+  caller: Caller,
+  orgId: OrgId,
+  input: { readonly role: string; readonly ttlSeconds?: number },
+): Promise<CreatedInvitation> {
   return withTenant(deps.db, orgId, async (tx) => {
     await requireMembership(tx, orgId, caller.userId);
-    const [row] = await tx
-      .insert(invitations)
-      .values({
-        orgId,
-        role,
-        tokenHash: hashInviteToken(token),
-        invitedBy: caller.userId,
-        expiresAt: sql`now() + make_interval(secs => ${ttl})`,
-      })
-      .returning({ id: invitations.id, expiresAt: invitations.expiresAt });
-    if (!row) throw new Error('invitation insert returned no row');
-    await audit(tx, {
-      caller,
+    const created = await createInvitationInTx(tx, deps, caller, orgId, input);
+    await writeAudit(tx, {
+      actorId: caller.userId,
       orgId,
       action: 'invitation.create',
       resourceType: 'invitation',
-      resourceId: row.id,
+      resourceId: created.invitationId,
       outcome: 'success',
+      requestId: caller.requestId,
     });
-    return { invitationId: row.id, token, expiresAt: row.expiresAt };
+    return created;
   });
 }
 
@@ -268,7 +275,7 @@ export async function acceptInvitation(
       if (!m) throw new Error('membership insert returned no row');
       membershipId = m.id;
     } catch (error) {
-      if (isUniqueViolation(error, 'memberships_org_id_user_id_unique')) {
+      if (hasConstraint(error, 'memberships_org_id_user_id_unique', '23505')) {
         throw new OrgError('conflict', 'already a member of this organization', { cause: error });
       }
       throw error;
@@ -277,15 +284,33 @@ export async function acceptInvitation(
       .update(invitations)
       .set({ acceptedAt: sql`now()`, acceptedBy: caller.userId, updatedAt: sql`now()` })
       .where(eq(invitations.id, invite.id));
-    await audit(tx, {
-      caller,
+    await writeAudit(tx, {
+      actorId: caller.userId,
       orgId,
       action: 'invitation.accept',
       resourceType: 'invitation',
       resourceId: invite.id,
       outcome: 'success',
+      requestId: caller.requestId,
     });
     return { orgId, membershipId, role: invite.role };
+  });
+}
+
+/** The role update, inside an already-checked tenant transaction. */
+export async function changeRoleInTx(
+  tx: TenantTx,
+  orgId: OrgId,
+  input: { readonly membershipId: string; readonly role: string },
+): Promise<void> {
+  const role = checkRole(input.role);
+  await mapLastOwner(async () => {
+    const updated = await tx
+      .update(memberships)
+      .set({ role, updatedAt: sql`now()` })
+      .where(and(eq(memberships.id, input.membershipId), eq(memberships.orgId, orgId)))
+      .returning({ id: memberships.id });
+    if (updated.length === 0) throw new OrgError('not_found', 'membership not found');
   });
 }
 
@@ -296,32 +321,48 @@ export async function changeRole(
   orgId: OrgId,
   input: { readonly membershipId: string; readonly role: string },
 ): Promise<void> {
-  const role = checkRole(input.role);
-  await mapLastOwner(() =>
-    withTenant(deps.db, orgId, async (tx) => {
-      await requireMembership(tx, orgId, caller.userId);
-      const updated = await tx
-        .update(memberships)
-        .set({ role, updatedAt: sql`now()` })
-        .where(and(eq(memberships.id, input.membershipId), eq(memberships.orgId, orgId)))
-        .returning({ id: memberships.id });
-      if (updated.length === 0) throw new OrgError('not_found', 'membership not found');
-      await audit(tx, {
-        caller,
-        orgId,
-        action: 'membership.change_role',
-        resourceType: 'membership',
-        resourceId: input.membershipId,
-        outcome: 'success',
-      });
-    }),
-  );
+  checkRole(input.role);
+  await withTenant(deps.db, orgId, async (tx) => {
+    await requireMembership(tx, orgId, caller.userId);
+    await changeRoleInTx(tx, orgId, input);
+    await writeAudit(tx, {
+      actorId: caller.userId,
+      orgId,
+      action: 'membership.change_role',
+      resourceType: 'membership',
+      resourceId: input.membershipId,
+      outcome: 'success',
+      requestId: caller.requestId,
+    });
+  });
+}
+
+/**
+ * The membership delete, inside an already-checked tenant transaction. Also
+ * clears that org from the removed user's sessions. Returns the removed user.
+ */
+export async function removeMemberInTx(
+  tx: TenantTx,
+  orgId: OrgId,
+  input: { readonly membershipId: string },
+): Promise<{ userId: UserId }> {
+  return mapLastOwner(async () => {
+    const [removed] = await tx
+      .delete(memberships)
+      .where(and(eq(memberships.id, input.membershipId), eq(memberships.orgId, orgId)))
+      .returning({ userId: memberships.userId });
+    if (!removed) throw new OrgError('not_found', 'membership not found');
+    await tx
+      .update(sessions)
+      .set({ activeOrgId: null })
+      .where(and(eq(sessions.userId, removed.userId), eq(sessions.activeOrgId, orgId)));
+    return { userId: removed.userId as UserId };
+  });
 }
 
 /**
  * Removes a membership from `orgId`, or leaves the org when it is the caller's
- * own. Clears that org from the removed user's sessions. Removing the last owner
- * gives `last_owner`.
+ * own. Removing the last owner gives `last_owner`.
  */
 export async function removeMember(
   deps: OrgDeps,
@@ -329,28 +370,19 @@ export async function removeMember(
   orgId: OrgId,
   input: { readonly membershipId: string },
 ): Promise<void> {
-  await mapLastOwner(() =>
-    withTenant(deps.db, orgId, async (tx) => {
-      await requireMembership(tx, orgId, caller.userId);
-      const [removed] = await tx
-        .delete(memberships)
-        .where(and(eq(memberships.id, input.membershipId), eq(memberships.orgId, orgId)))
-        .returning({ userId: memberships.userId });
-      if (!removed) throw new OrgError('not_found', 'membership not found');
-      await tx
-        .update(sessions)
-        .set({ activeOrgId: null })
-        .where(and(eq(sessions.userId, removed.userId), eq(sessions.activeOrgId, orgId)));
-      await audit(tx, {
-        caller,
-        orgId,
-        action: removed.userId === caller.userId ? 'membership.leave' : 'membership.remove',
-        resourceType: 'membership',
-        resourceId: input.membershipId,
-        outcome: 'success',
-      });
-    }),
-  );
+  await withTenant(deps.db, orgId, async (tx) => {
+    await requireMembership(tx, orgId, caller.userId);
+    const removed = await removeMemberInTx(tx, orgId, input);
+    await writeAudit(tx, {
+      actorId: caller.userId,
+      orgId,
+      action: removed.userId === caller.userId ? 'membership.leave' : 'membership.remove',
+      resourceType: 'membership',
+      resourceId: input.membershipId,
+      outcome: 'success',
+      requestId: caller.requestId,
+    });
+  });
 }
 
 /**
@@ -378,13 +410,14 @@ export async function setActiveOrg(
       : [];
     const ok = m !== undefined && updated.length === 1;
     // Audit rows written here have no org: withUser has no org context.
-    await audit(tx, {
-      caller,
+    await writeAudit(tx, {
+      actorId: caller.userId,
       orgId: null,
       action: 'session.set_active_org',
       resourceType: 'membership',
       resourceId: m ? input.membershipId : null,
       outcome: ok ? 'success' : 'denied',
+      requestId: caller.requestId,
     });
     return ok ? parseOrgId(m.orgId) : null;
   });
