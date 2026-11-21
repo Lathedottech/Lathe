@@ -114,7 +114,9 @@ export async function main(argv: readonly string[], deps: CliDeps = {}): Promise
     ...request.data,
     patch,
     gates: deps.gates ?? defaultGates(policyDir),
-    harnessSha256: deps.harnessDir ? await hashTree(deps.harnessDir) : await harnessHash(PACKAGE_DIR),
+    harnessSha256: deps.harnessDir
+      ? await hashTree(deps.harnessDir)
+      : await harnessHash(PACKAGE_DIR),
     policySha256: await hashTree(policyDir),
     now: deps.now ?? (() => new Date()),
   });
