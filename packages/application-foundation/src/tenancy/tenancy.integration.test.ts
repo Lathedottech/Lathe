@@ -4,8 +4,14 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { auditEvents, memberships, organizations } from '../db/schema.js';
-import { createDb, createPool, expectPgError } from '../db/test-db.js';
-import { parseOrgId, parseUserId, type OrgId, type UserId } from './ids.js';
+import {
+  createDb,
+  createPool,
+  createTestUser,
+  deleteTestUsers,
+  expectPgError,
+} from '../db/test-db.js';
+import { parseOrgId, type OrgId, type UserId } from './ids.js';
 import { registeredTenantTables } from './tenant-table.js';
 import { withTenant, withUser } from './with-tenant.js';
 
@@ -18,8 +24,9 @@ let db: NodePgDatabase;
 
 const orgA = parseOrgId(randomUUID());
 const orgB = parseOrgId(randomUUID());
-const userX = parseUserId(randomUUID()); // member of A and B
-const userY = parseUserId(randomUUID()); // member of A only
+let userX: UserId; // member of A and B
+let userY: UserId; // member of A only
+let userZ: UserId; // member of nothing; used for inserts that must fail or roll back
 const requestId = randomUUID();
 let membershipXinA: string;
 
@@ -53,6 +60,9 @@ function expectNoContext(ctx: { org: string | null; user: string | null }): void
 beforeAll(async () => {
   pool = createPool('app', 1);
   db = createDb(pool);
+  userX = await createTestUser(pool, 'p1-02-x');
+  userY = await createTestUser(pool, 'p1-02-y');
+  userZ = await createTestUser(pool, 'p1-02-z');
   membershipXinA = await createOrgWithMember(orgA, 'Org A', userX);
   await createOrgWithMember(orgB, 'Org B', userX);
   await withTenant(db, orgA, (tx) =>
@@ -75,6 +85,7 @@ afterAll(async () => {
       tx.delete(organizations).where(eq(organizations.id, orgId)),
     );
   }
+  await deleteTestUsers(pool, [userX, userY, userZ]);
   await pool?.end();
 });
 
@@ -135,7 +146,7 @@ describe('no tenant context', () => {
     const code = await expectPgError(() =>
       pool.query("INSERT INTO memberships (org_id, user_id, role) VALUES ($1, $2, 'member')", [
         orgA,
-        randomUUID(),
+        userZ,
       ]),
     );
     expect(code).toBe(INSUFFICIENT_PRIVILEGE);
@@ -196,9 +207,7 @@ describe('withTenant isolates organizations', () => {
   it('rejects inserting a row with another org\u2019s org_id', async () => {
     const code = await expectPgError(() =>
       withTenant(db, orgB, (tx) =>
-        tx
-          .insert(memberships)
-          .values({ orgId: orgA, userId: parseUserId(randomUUID()), role: 'x' }),
+        tx.insert(memberships).values({ orgId: orgA, userId: userZ, role: 'x' }),
       ),
     );
     expect(code).toBe(INSUFFICIENT_PRIVILEGE);
@@ -244,7 +253,7 @@ describe('context never leaks between transactions', () => {
   });
 
   it('is cleared and the write rolled back when fn throws', async () => {
-    const userId = parseUserId(randomUUID());
+    const userId = userZ;
     await expect(
       withTenant(db, orgA, async (tx) => {
         await tx.insert(memberships).values({ orgId: orgA, userId, role: 'member' });

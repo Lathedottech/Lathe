@@ -1,5 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
+import { parseUserId, type UserId } from '../tenancy/ids.js';
 
 const REQUIRED = [
   'POSTGRES_DB',
@@ -73,4 +75,26 @@ export async function expectPgError(fn: () => Promise<unknown>): Promise<string>
     throw error;
   }
   throw new Error('Expected a PostgreSQL error, but the statement succeeded');
+}
+
+/**
+ * Inserts a bare user row (no password, cannot sign in), for tests that need a
+ * real `users.id` behind a membership. `users` has no RLS, so the app role can.
+ */
+export async function createTestUser(q: pg.Pool | pg.Client, label = 'test'): Promise<UserId> {
+  const result = await q.query<{ id: string }>(
+    'INSERT INTO users (name, email) VALUES ($1, $2) RETURNING id',
+    [label, `${label}-${randomUUID()}@example.test`],
+  );
+  const id = result.rows[0]?.id;
+  if (!id) throw new Error('user insert returned no id');
+  return parseUserId(id);
+}
+
+/** Deletes test users; their memberships and sessions go with them (ON DELETE CASCADE). */
+export async function deleteTestUsers(
+  q: pg.Pool | pg.Client,
+  ids: readonly string[],
+): Promise<void> {
+  if (ids.length > 0) await q.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [ids]);
 }
