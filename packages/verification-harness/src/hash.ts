@@ -52,3 +52,19 @@ export function resultHash(input: {
   ];
   return sha256(lines.join('\n') + '\n');
 }
+
+/**
+ * `harnessSha256`: everything that decides a verdict. The harness sources, the
+ * CLI entry, the package manifest (it pins `tsx`) and the shared contracts (the
+ * report schema and `GATE_ORDER`). Not included: the lockfile and installed
+ * dependencies; the verifier image pins those (P5-03).
+ */
+export async function harnessHash(packageDir: string): Promise<string> {
+  const parts: [string, string][] = [
+    ['src', await hashTree(join(packageDir, 'src'))],
+    ['bin', await hashTree(join(packageDir, 'bin'))],
+    ['package.json', sha256(await readFile(join(packageDir, 'package.json')))],
+    ['shared-contracts/src', await hashTree(join(packageDir, '..', 'shared-contracts', 'src'))],
+  ];
+  return sha256(parts.map(([name, hash]) => `${hash}  ${name}\n`).join(''));
+}

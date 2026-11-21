@@ -9,7 +9,7 @@ import {
   type GateId,
 } from '@lathe/shared-contracts';
 import type { Gate } from './gate.js';
-import { hashTree } from './hash.js';
+import { harnessHash, hashTree } from './hash.js';
 import { defaultGates } from './registry.js';
 import { runVerification } from './runner.js';
 
@@ -114,7 +114,7 @@ export async function main(argv: readonly string[], deps: CliDeps = {}): Promise
     ...request.data,
     patch,
     gates: deps.gates ?? defaultGates(policyDir),
-    harnessSha256: await hashTree(deps.harnessDir ?? resolve(PACKAGE_DIR, 'src')),
+    harnessSha256: deps.harnessDir ? await hashTree(deps.harnessDir) : await harnessHash(PACKAGE_DIR),
     policySha256: await hashTree(policyDir),
     now: deps.now ?? (() => new Date()),
   });
