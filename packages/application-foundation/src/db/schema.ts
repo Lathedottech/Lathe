@@ -1,16 +1,19 @@
 import { index, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { users } from '../auth/schema.js';
 import { tenantTable } from '../tenancy/tenant-table.js';
 import { timestamps } from './columns.js';
 import { organizations } from './organizations.js';
 
 export { organizations };
 
-/** Tenant table. `user_id` gets its foreign key when auth tables land (P1-03). */
+/** Tenant table. `user_id` references `users` (migration 0003). */
 export const memberships = tenantTable(
   'memberships',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    userId: uuid('user_id').notNull(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
     role: text('role').notNull(),
     ...timestamps(),
   },
