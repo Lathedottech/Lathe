@@ -1,34 +1,24 @@
 # ADR 0003: Kiro authentication for automation (D3)
 
 ## Status
-**Proposed, blocked on P0-04.** No path is chosen. This ADR becomes Accepted only after the spike reports evidence and the project lead approves. The installed CLI (2.7.0) is not logged in (`kiro-cli whoami`).
+Proposed decision from spike P0-04, 2026-11-19. Awaiting approval by the project lead (person A). This change invalidates the 2026-11-17 approval of the earlier version of this file (`docs/reviews/P0-03-human.md`).
 
 ## Context
-Lathe runs Kiro without a human at the keyboard, inside a sandbox that must not hold other credentials (`security.md`: sandboxes receive only the Kiro credential). Whether automated use is allowed, and under which licence and rate limits, is unconfirmed.
+Lathe runs Kiro inside an untrusted sandbox with no human at the keyboard. The sandbox may hold only the Kiro credential (`.kiro/steering/security.md`). ADR 0002 chose ACP. The spike tried four modes: A (ACP, API key), B (ACP, login session), C (headless, API key), D (host).
 
 ## Options considered
-Paths in the order they are tried (IMPLEMENTATION_PLAN.md P0 go/no-go, Nov 17). Stop at the first that works.
-- **A. ACP in the container with an API key.** Preferred if it works: best isolation and structured events.
-- **B. ACP in the container with a mounted Kiro login.** Puts a login session inside the sandbox.
-- **C. Headless `chat --no-interactive` in the container with an API key.** No event stream.
-- **D. Kiro on the host in a disposable worktree.** Weaker isolation, documented as such.
-- **None works:** Lathe ships as independent verification and delivery for Kiro-built changes.
+1. **API key (`KIRO_API_KEY`)**, modes A and C. Not available: API keys are created only on Pro, Pro+, Pro Max and Power plans; the team's account is Kiro Free.
+2. **Login session in a dedicated Docker volume**, mode B. A one-time device-flow login inside a container; the session lives in a named volume mounted only into agent sandboxes.
+3. **Host Kiro with a disposable worktree**, mode D. Rejected: the agent would run with the host user's files, network and credentials.
 
-## Decision criteria
-1. Works unattended inside a Docker container on WSL2 (P0 acceptance).
-2. Credential exposure: only the Kiro credential reaches the sandbox, scoped to the Kiro process; never the GitHub token, production credentials or Engine DB URL.
-3. Terms of use and rate limits permit automated use (to be confirmed).
-4. Event stream available for evidence and the Workspace activity view.
-5. Network endpoints Kiro needs are known, so the egress allow-list (ADR 0006) can be written.
-6. Re-runs from a clean clone.
-7. Isolation level, and whether the weakness is documented if path D is chosen.
-
-## Decision
-Not made.
+## Decision (proposed)
+Use **mode B** for the Kiroween MVP. Switch to an API key (mode A) if the plan is upgraded; the adapter's interface (C2) does not depend on which.
 
 ## Consequences
-- P4-01 and P4-02 depend on this outcome. The credential injection method and egress allow-list cannot be finalized before it.
-- A fallback to C or D weakens either the event stream or isolation. The write-up must say so.
+- The session is a real credential and every agent in the sandbox can read it. Mitigations: a **dedicated Builder ID account for Lathe runtime**, not a person's own account; the volume is mounted only into agent sandboxes, never into a verifier or the host; egress allow-list (P4-02); revoke with `kiro-cli logout` and deleting the volume.
+- Credits are shared with whatever account signs in.
+- Contract C2 needs v1.2: a `kiro-session` mount source that may be read-write, and a type for permission requests (spike finding 1).
+- A human must sign in again when the session expires.
 
 ## Verification
-P0-04 records auth method, event shapes, required endpoints and the go/no-go in `docs/spikes/kiro-acp.md`. Gate G1 (Nov 18) requires the path to be chosen.
+`docs/spikes/kiro-acp.md`: handshake, prompt that wrote a file, and cancellation, all inside the hardened container. P4-01 and P4-02 re-check with the production image and the egress allow-list.

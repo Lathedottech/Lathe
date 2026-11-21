@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { getTableConfig, type PgTable } from 'drizzle-orm/pg-core';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { accounts, rateLimits, sessions, users, verifications } from '../auth/schema.js';
 import { auditEvents, memberships, organizations } from './schema.js';
-import { connectAs, expectPgError, roleName } from './test-db.js';
+import { connectAs, createTestUser, deleteTestUsers, expectPgError, roleName } from './test-db.js';
 
 // PostgreSQL error codes.
 const INSUFFICIENT_PRIVILEGE = '42501';
@@ -13,6 +14,7 @@ const CHECK_VIOLATION = '23514';
 
 let app: pg.Client;
 const createdOrgIds: string[] = [];
+const createdUserIds: string[] = [];
 const requestId = randomUUID();
 
 beforeAll(async () => {
@@ -24,6 +26,7 @@ afterAll(async () => {
   for (const orgId of createdOrgIds) {
     await inOrg(orgId, () => app.query('DELETE FROM organizations WHERE id = $1', [orgId]));
   }
+  await deleteTestUsers(app, createdUserIds);
   await app?.end();
 });
 
@@ -97,7 +100,16 @@ describe('database roles', () => {
 });
 
 describe('schema matches the Drizzle definition', () => {
-  const tables: PgTable[] = [organizations, memberships, auditEvents];
+  const tables: PgTable[] = [
+    organizations,
+    memberships,
+    auditEvents,
+    users,
+    sessions,
+    accounts,
+    verifications,
+    rateLimits,
+  ];
 
   it.each(tables.map((t) => [getTableConfig(t).name, t] as const))(
     '%s has the same columns, types and nullability',
@@ -158,7 +170,8 @@ describe('audit_events is append-only for the app role', () => {
 describe('memberships constraints', () => {
   it('rejects a duplicate membership for the same org and user', async () => {
     const orgId = await createOrg('p1-01 duplicate test');
-    const userId = randomUUID();
+    const userId = await createTestUser(app, 'p1-01-duplicate');
+    createdUserIds.push(userId);
     const insert = () =>
       inOrg(orgId, () =>
         app.query("INSERT INTO memberships (org_id, user_id, role) VALUES ($1, $2, 'member')", [
@@ -172,14 +185,56 @@ describe('memberships constraints', () => {
 
   it('rejects a membership in an organization that does not exist', async () => {
     const missingOrg = randomUUID();
+    const userId = await createTestUser(app, 'p1-01-missing-org');
+    createdUserIds.push(userId);
     const code = await expectPgError(() =>
       inOrg(missingOrg, () =>
         app.query("INSERT INTO memberships (org_id, user_id, role) VALUES ($1, $2, 'member')", [
           missingOrg,
+          userId,
+        ]),
+      ),
+    );
+    expect(code).toBe(FOREIGN_KEY_VIOLATION);
+  });
+
+  it('rejects a membership for a user that does not exist (P1-03)', async () => {
+    const orgId = await createOrg('p1-03 missing user');
+    const code = await expectPgError(() =>
+      inOrg(orgId, () =>
+        app.query("INSERT INTO memberships (org_id, user_id, role) VALUES ($1, $2, 'member')", [
+          orgId,
           randomUUID(),
         ]),
       ),
     );
     expect(code).toBe(FOREIGN_KEY_VIOLATION);
+  });
+});
+
+describe('users', () => {
+  it('rejects an email that is not lower-case', async () => {
+    const code = await expectPgError(() =>
+      app.query("INSERT INTO users (name, email) VALUES ('x', $1)", [
+        `Mixed-${randomUUID()}@Example.test`,
+      ]),
+    );
+    expect(code).toBe(CHECK_VIOLATION);
+  });
+
+  it('deleting a user deletes their memberships', async () => {
+    const orgId = await createOrg('p1-03 cascade');
+    const userId = await createTestUser(app, 'p1-03-cascade');
+    await inOrg(orgId, () =>
+      app.query("INSERT INTO memberships (org_id, user_id, role) VALUES ($1, $2, 'member')", [
+        orgId,
+        userId,
+      ]),
+    );
+    await deleteTestUsers(app, [userId]);
+    const left = await inOrg(orgId, () =>
+      app.query('SELECT 1 FROM memberships WHERE user_id = $1', [userId]),
+    );
+    expect(left.rows).toEqual([]);
   });
 });

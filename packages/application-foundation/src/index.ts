@@ -9,6 +9,24 @@ export type {
 } from './db/schema.js';
 export { runMigrations, type MigrateOptions } from './db/migrate.js';
 export {
+  accounts,
+  createAuth,
+  getPrincipal,
+  rateLimits,
+  seedDemo,
+  sessions,
+  users,
+  verifications,
+  type Auth,
+  type AuthConfig,
+  type DemoSeed,
+  type DemoUser,
+  type Principal,
+  type SeededUser,
+  type Session,
+  type User,
+} from './auth/index.js';
+export {
   parseOrgId,
   parseUserId,
   registeredTenantTables,
