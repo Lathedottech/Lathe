@@ -66,3 +66,30 @@ Person A must enable branch protection. GitHub usernames confirmed: A `@ousssama
 ## 8. Recommended next task
 
 Open a pull request from this branch to see CI run, then person A turns on branch protection. After P1-01 merges, add the integration test job.
+
+---
+
+## Addendum 2026-11-19: how this task reached `main`
+
+**This task was not merged through a pull request.** Commit `cc2d0e5` (`ci(P0-06): add CI workflow and CODEOWNERS`, author HammaBG, 2026-11-18 15:56 +0100) is on `main`'s first-parent history as a plain commit, before the merge commits of PR #3 and PR #2:
+
+```
+$ git log --first-parent --format='%h %an | %s' origin/main
+9ceb1a2 Oussama Rahamni | Merge pull request #2: contracts C1-C4 and B consumer review (P0-07)
+7d21038 Oussama Rahamni | Merge pull request #3 from ousssamarahmani/task/P1-02-tenancy-rls
+cc2d0e5 HammaBG | ci(P0-06): add CI workflow and CODEOWNERS
+132716f Oussama Rahamni | chore: initial public release of Lathe
+```
+
+GitHub's API lists no pull request for it: `GET /repos/ousssamarahmani/Lathe/commits/cc2d0e5/pulls` returned `[]`.
+
+Consequences:
+- The change to `.github/` (a protected path) landed with **no review**, no CI run before merge, and no CODEOWNERS approval. `agent-workflow.md` forbids pushing to `main`.
+- It was possible because branch protection on `main` was not enabled (section 6). It does not show which command put the commit there; that is not recorded in the repository.
+- The CI it added has since run green on later pull requests (for example run 7 on PR #5, `conclusion: success`), so the workflow itself works.
+
+Remedy: the follow-up in the next addendum goes through a normal pull request, and person A reviews `cc2d0e5` there as part of it. Branch protection must be on before any further merge.
+
+## Addendum 2026-11-19: CI follow-up (branch `task/P0-06-ci-postgres`)
+
+See `docs/reports/P0-06-devops-followup.md`.
