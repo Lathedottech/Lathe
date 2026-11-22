@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TenantContract, defineTenantContract } from './index.js';
+import { TenantContract, defineTenantContract, type TenantContractInput } from './index.js';
 import { at, clone } from './test-fixtures.js';
 
 const valid = {
@@ -79,10 +79,12 @@ const rejects = (mutate: (c: C) => unknown) => {
 describe('C1 TenantContract (P1-06)', () => {
   it('accepts a valid contract and defineTenantContract returns it', () => {
     expect(TenantContract.safeParse(valid).success).toBe(true);
-    expect(defineTenantContract(valid).app).toBe('support-desk');
+    expect(defineTenantContract(valid as TenantContractInput).app).toBe('support-desk');
   });
   it('defineTenantContract throws on an invalid contract', () => {
-    expect(() => defineTenantContract({ ...valid, permissions: ['*'] })).toThrow();
+    expect(() =>
+      defineTenantContract({ ...valid, permissions: ['*'] } as TenantContractInput),
+    ).toThrow();
   });
 
   it('rejects a role granting an undeclared permission', () =>
@@ -130,7 +132,8 @@ describe('C1 TenantContract (P1-06)', () => {
   });
   it('rejects a contract without session routes (Q1)', () =>
     rejects((c) => {
-      const { session: _session, ...rest } = c;
+      const rest: Record<string, unknown> = { ...c };
+      delete rest['session'];
       return rest;
     }));
 });
