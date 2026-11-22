@@ -1,7 +1,5 @@
 <div align="center">
-  <img src="docs/assets/brand/lathe-logo.png" alt="Lathe logo" width="140" />
-  <h1>Lathe</h1>
-  <p><strong>A verified mini software factory for agent-native development.</strong></p>
+  <img src="docs/assets/brand/lathe-logo.png" alt="Lathe: mini software factory. Build, verify and deliver with AI agents. Specs, foundation, apps, verify, delivery." width="600" />
   <p>
     <a href="#what-lathe-is">Code</a>
     ·
