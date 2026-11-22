@@ -128,7 +128,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUC
 
 ## Security
 
-Security rules and the threat model are in [SECURITY.md](SECURITY.md). Report vulnerabilities privately through [GitHub private vulnerability reporting](https://github.com/ousssamarahmani/Lathe/security/advisories/new), never in public issues.
+Security rules and the threat model are in [SECURITY.md](SECURITY.md). Report vulnerabilities privately through [GitHub private vulnerability reporting](https://github.com/lathedottech/Lathe/security/advisories/new), never in public issues.
 
 ## License
 

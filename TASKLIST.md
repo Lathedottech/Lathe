@@ -17,7 +17,7 @@ Only tasks that have started are listed. **Every task not listed is Not started.
 
 | ID | Status | Evidence | Open items |
 |---|---|---|---|
-| P0-01 Repository init | In progress | Public repo [ousssamarahmani/Lathe](https://github.com/ousssamarahmani/Lathe), first commit `132716f`; MIT `LICENSE` detected by GitHub; `.kiro/` committed and not ignored; `.nvmrc`, `.editorconfig`, `.gitattributes` | No task report or review file yet. Social preview and account avatar uploads are manual and unconfirmed |
+| P0-01 Repository init | In progress | Public repo [lathedottech/Lathe](https://github.com/lathedottech/Lathe), first commit `132716f`; MIT `LICENSE` detected by GitHub; `.kiro/` committed and not ignored; `.nvmrc`, `.editorconfig`, `.gitattributes` | No task report or review file yet. Social preview and account avatar uploads are manual and unconfirmed |
 | P0-02 Lean monorepo | Done | [report](docs/reports/P0-02-devops.md), [review](docs/reviews/P0-02-architect.md) (approve, 2026-11-17): install, typecheck, lint, test, format all exit 0; planted type error and failing test both caught | Condition C1: Postgres roles check (`NOSUPERUSER`, `NOBYPASSRLS`) not run because Docker is stopped; blocks P1-02. Node 22 not tested |
 | P0-03 ADRs D1-D6 | Done | [report](docs/reports/P0-03-architect.md), [approval](docs/reviews/P0-03-human.md) by the project lead, bound to a content hash | ADR 0003 stays Proposed until P0-04. ADRs 0004 and 0006 still need `security` review |
 | P0-04 Kiro go/no-go spike | Blocked | Re-checked 2026-11-17: `kiro-cli-chat 2.7.0`, `kiro-cli whoami` returns "Not logged in"; Docker Desktop not running | Project lead must update the Kiro CLI, sign in, and start Docker Desktop and WSL |
