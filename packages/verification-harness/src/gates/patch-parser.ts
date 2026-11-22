@@ -19,7 +19,8 @@ export interface ParsedPatch {
   readonly problems: readonly string[];
 }
 
-type State = 'start' | 'header' | 'hunk' | 'after-hunk' | 'binary';
+type State =
+  'start' | 'header' | 'hunk' | 'after-hunk' | 'binary-start' | 'binary-data' | 'binary-gap';
 interface OpenFile {
   paths: string[];
   modes: string[];
@@ -46,6 +47,12 @@ const IGNORED_LINES = [
   'Binary files ',
 ] as const;
 const HUNK = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/;
+/** Start of a binary block: `literal <size>` or `delta <size>`. */
+const BINARY_BLOCK = /^(literal|delta) \d+$/;
+/** One line of git's base85 binary data: a length character, then base85 characters. No spaces. */
+const BASE85_LINE = /^[A-Za-z][0-9A-Za-z!#$%&()*+\-;<=>?@^_`{|}~]{5,}$/;
+/** A binary patch has a forward block and at most one reverse block. */
+const MAX_BINARY_BLOCKS = 2;
 const encoder = new TextEncoder();
 
 /** Decodes a git C-style quoted path such as `"a/\303\251.txt"`. Returns null when malformed. */
@@ -151,6 +158,7 @@ export function parsePatch(text: string): ParsedPatch {
   let current = null as OpenFile | null;
   let oldLeft = 0;
   let newLeft = 0;
+  let binaryBlocks = 0;
 
   const done = (): ParsedPatch => ({ files, problems });
   const problem = (lineNo: number, why: string): ParsedPatch => {
@@ -159,6 +167,8 @@ export function parsePatch(text: string): ParsedPatch {
   };
   const closeFile = (): string | null => {
     if (state === 'hunk') return 'a hunk ends before its line count';
+    if (state === 'binary-start') return 'a binary patch has no data';
+    if (state === 'binary-data') return 'a binary block does not end with a blank line';
     if (current !== null) {
       if (!current.headerOk && current.paths.length === 0)
         return 'cannot tell which file a "diff --git" header names';
@@ -192,7 +202,29 @@ export function parsePatch(text: string): ParsedPatch {
       state = 'header';
       continue;
     }
-    if (state === 'binary') continue;
+    // Binary sections are parsed, not skipped: after the blocks only `diff --git`
+    // (handled above) or the end of the patch may follow (B's review of #7).
+    if (state === 'binary-start' || state === 'binary-gap') {
+      if (BINARY_BLOCK.test(line) && binaryBlocks < MAX_BINARY_BLOCKS) {
+        binaryBlocks++;
+        state = 'binary-data';
+        continue;
+      }
+      return problem(
+        lineNo,
+        state === 'binary-start'
+          ? 'expected "literal" or "delta" after "GIT binary patch"'
+          : 'unexpected line after a binary patch',
+      );
+    }
+    if (state === 'binary-data') {
+      if (line === '') {
+        state = 'binary-gap';
+        continue;
+      }
+      if (BASE85_LINE.test(line)) continue;
+      return problem(lineNo, 'malformed binary patch data');
+    }
     if (state === 'start') return problem(lineNo, 'not a git diff: expected "diff --git"');
     if (line.startsWith('@@')) {
       const counts = hunkCounts(line);
@@ -207,7 +239,8 @@ export function parsePatch(text: string): ParsedPatch {
     }
     if (current === null) return problem(lineNo, 'header line outside a file');
     if (line === 'GIT binary patch') {
-      state = 'binary';
+      state = 'binary-start';
+      binaryBlocks = 0;
       continue;
     }
     const mode = MODE_LINES.find((p) => line.startsWith(p));

@@ -34,3 +34,5 @@ All exit 0. `Test Files 13 passed`, `Tests 124 passed` (40 new: 30 fixtures, 10 
 
 ## 8. Next task
 P2-03 build, type, lint and test gates (due Nov 20).
+## Fix after B's review (2026-11-22)
+Bypass found by B: a plain `---`/`+++` diff placed after a binary section was skipped by the parser, so the gate passed while `git apply` changed `.github/workflows/ci.yml`. The parser now reads binary sections strictly (`literal`/`delta`, base85 lines, blank line, at most two blocks; then only `diff --git` or end of input). New fixtures: `reject-plain-diff-after-binary`, `reject-plain-diff-after-binary-reverse-block`, `reject-garbage-in-binary-data`, `allow-binary-in-app-with-reverse-block`; the first failed on the old parser before the fix. Defence in depth (check the paths git actually changed after applying the patch in the verifier) is assigned to P5-03.

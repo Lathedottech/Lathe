@@ -403,4 +403,80 @@ index 1111111..2222222 100644
 diff --git a/.github/x b/.github/x
 `),
   },
+  {
+    // B's review of #7: a plain diff after a binary section reached git apply unparsed.
+    name: 'reject-plain-diff-after-binary',
+    expect: 'fail',
+    rule: 'protected-paths.unparseable',
+    diff: p(String.raw`
+diff --git a/apps/support-desk/logo.bin b/apps/support-desk/logo.bin
+index 1111111111111111111111111111111111111111..2222222222222222222222222222222222222222 100644
+GIT binary patch
+literal 4
+LcmZQzWMT#Y01f~L
+
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -1 +1 @@
+-name: CI
++name: PWNED
+`),
+  },
+  {
+    name: 'reject-plain-diff-after-binary-reverse-block',
+    expect: 'fail',
+    rule: 'protected-paths.unparseable',
+    diff: p(String.raw`
+diff --git a/apps/support-desk/logo.bin b/apps/support-desk/logo.bin
+index 1111111111111111111111111111111111111111..2222222222222222222222222222222222222222 100644
+GIT binary patch
+literal 4
+LcmZQzWMT#Y01f~L
+
+literal 4
+LcmZQzWMT#Y01f~L
+
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -1 +1 @@
+-name: CI
++name: PWNED
+`),
+  },
+  {
+    name: 'reject-garbage-in-binary-data',
+    expect: 'fail',
+    rule: 'protected-paths.unparseable',
+    diff: p(String.raw`
+diff --git a/apps/support-desk/logo.bin b/apps/support-desk/logo.bin
+index 1111111111111111111111111111111111111111..2222222222222222222222222222222222222222 100644
+GIT binary patch
+literal 4
+LcmZQzWMT#Y01f~L
++++ b/.github/workflows/ci.yml
+
+`),
+  },
+  {
+    name: 'allow-binary-in-app-with-reverse-block',
+    expect: 'pass',
+    diff: p(String.raw`
+diff --git a/apps/support-desk/logo.bin b/apps/support-desk/logo.bin
+index 1111111111111111111111111111111111111111..2222222222222222222222222222222222222222 100644
+GIT binary patch
+literal 4
+LcmZQzWMT#Y01f~L
+
+literal 4
+LcmZQzWMT#Y01f~L
+
+diff --git a/apps/support-desk/src/kb/index.ts b/apps/support-desk/src/kb/index.ts
+index 1111111..2222222 100644
+--- a/apps/support-desk/src/kb/index.ts
++++ b/apps/support-desk/src/kb/index.ts
+@@ -1 +1 @@
+-export const a = 1;
++export const a = 2;
+`),
+  },
 ];
