@@ -6,6 +6,9 @@ export default defineConfig({
       'packages/application-foundation',
       'packages/verification-harness',
       'packages/shared-contracts',
+      'apps/workspace',
+      // Tests of repository tooling (import boundaries, P0-10). Fixture files are not tests.
+      { test: { name: 'scripts', include: ['scripts/**/*.test.mjs'] } },
     ],
   },
 });

@@ -47,4 +47,4 @@ Status: Proposed. No code exists yet; these are requirements the implementation 
 
 ## Reporting
 
-Report vulnerabilities privately through [GitHub private vulnerability reporting](https://github.com/ousssamarahmani/Lathe/security/advisories/new). Do not report vulnerabilities in public issues, pull requests or discussions.
+Report vulnerabilities privately through [GitHub private vulnerability reporting](https://github.com/lathedottech/Lathe/security/advisories/new). Do not report vulnerabilities in public issues, pull requests or discussions.
