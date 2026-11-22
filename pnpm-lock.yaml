@@ -103,6 +103,37 @@ importers:
 
   packages/verification-harness: {}
 
+  services/factory-engine:
+    dependencies:
+      '@lathe/application-foundation':
+        specifier: workspace:*
+        version: link:../../packages/application-foundation
+      '@lathe/shared-contracts':
+        specifier: workspace:*
+        version: link:../../packages/shared-contracts
+      drizzle-orm:
+        specifier: 0.45.4
+        version: 0.45.4(@types/pg@8.23.1)(kysely@0.29.9)(pg@8.23.1)
+      pg:
+        specifier: 8.23.1
+        version: 8.23.1
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@types/node':
+        specifier: 22.20.5
+        version: 22.20.5
+      '@types/pg':
+        specifier: 8.23.1
+        version: 8.23.1
+      fast-check:
+        specifier: 4.10.3
+        version: 4.10.3
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@types/node@22.20.5)(happy-dom@21.0.4)(vite@8.3.8(@types/node@22.20.5))
+
 packages:
 
   '@babel/code-frame@7.29.7':

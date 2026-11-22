@@ -3,3 +3,4 @@ packages:
   - packages/verification-harness
   - packages/shared-contracts
   - apps/workspace
+  - services/factory-engine
