@@ -1,7 +1,9 @@
 /**
  * C2 Kiro adapter and sandbox interfaces.
  *
- * Status: FROZEN, v1, 2026-11-17. Changes need a handoff request to `architect`.
+ * Status: FROZEN, v1.2, 2026-11-21. Changes need a handoff request to `architect`.
+ * v1.2 (spike P0-04, ADR 0003): `kiro-session` mount for a login session, an optional
+ *   `permissionPolicy` on sessions, and `permission_request` events.
  * Owner: architect.
  * Implemented by: `integrations/kiro` (ACP adapter, fake ACP server, Docker sandbox runner).
  * Consumed by: `services/factory-engine` (pipeline), wired in only in `src/main.ts`.
@@ -43,6 +45,18 @@ export const SessionRequest = z.strictObject({
   /** Hard limit for the whole session. The adapter cancels and reports `timeout` when it is reached. */
   timeoutMs: z.number().int().min(1_000).max(3_600_000),
   mcpServers: NoMcpServers,
+  /**
+   * How the adapter answers Kiro's `session/request_permission` (spike finding 1).
+   * Absent means every request is rejected (deny by default).
+   */
+  permissionPolicy: z
+    .strictObject({
+      /** Tool calls may write only under these paths. */
+      allowWritesUnder: z.array(ContainerPath).min(1).max(4),
+      /** Whether shell commands may run at all. */
+      allowCommands: z.boolean(),
+    })
+    .optional(),
 });
 export type SessionRequest = z.infer<typeof SessionRequest>;
 
@@ -94,6 +108,16 @@ export const KiroEvent = z.discriminatedUnion('type', [
     output: z.unknown().optional(),
   }),
   z.strictObject({ ...eventBase, type: z.literal('turn_end'), stopReason: StopReason }),
+  /** A permission request from Kiro and the adapter's answer under the session's policy. */
+  z.strictObject({
+    ...eventBase,
+    type: z.literal('permission_request'),
+    toolCallId: z.string().min(1).max(200),
+    title: z.string().max(500),
+    decision: z.enum(['allowed', 'rejected']),
+    /** Why, in policy terms, for example `write outside /workspace/app`. */
+    reason: z.string().max(500),
+  }),
   z.strictObject({
     ...eventBase,
     type: z.literal('adapter_error'),
@@ -131,7 +155,17 @@ export interface KiroAdapter {
 export const SecretEnvName = z.enum(['KIRO_API_KEY']);
 export type SecretEnvName = z.infer<typeof SecretEnvName>;
 
-export const MountSource = z.enum(['target-app', 'application-foundation', 'kiro-runtime-config']);
+/**
+ * `kiro-session`: the Kiro login session volume (mode B, ADR 0003). It holds a
+ * credential: agent sandboxes only, never a verifier. Kiro refreshes the token,
+ * so it may be read-write.
+ */
+export const MountSource = z.enum([
+  'target-app',
+  'application-foundation',
+  'kiro-runtime-config',
+  'kiro-session',
+]);
 export type MountSource = z.infer<typeof MountSource>;
 
 export const Mount = z
@@ -171,7 +205,7 @@ export const SandboxSpec = z
         /^[a-z0-9./_-]+(:[A-Za-z0-9._-]+)?@sha256:[a-f0-9]{64}$/,
         'image must be pinned by sha256 digest',
       ),
-    mounts: z.array(Mount).min(1).max(4),
+    mounts: z.array(Mount).min(1).max(5),
     secretEnv: z.array(SecretEnvName).max(1),
     egressAllowlist: z.array(EgressHost).max(20),
     limits: z.strictObject({
