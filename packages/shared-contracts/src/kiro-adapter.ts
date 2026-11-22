@@ -171,8 +171,8 @@ export type MountSource = z.infer<typeof MountSource>;
 export const Mount = z
   .strictObject({ source: MountSource, containerPath: ContainerPath, mode: z.enum(['ro', 'rw']) })
   .refine(
-    (m) => m.source === 'target-app' || m.mode === 'ro',
-    'only the target app may be mounted read-write',
+    (m) => m.source === 'target-app' || m.source === 'kiro-session' || m.mode === 'ro',
+    'only the target app and the Kiro session may be mounted read-write',
   );
 export type Mount = z.infer<typeof Mount>;
 
@@ -238,8 +238,12 @@ export const SandboxSpec = z
           path: ['egressAllowlist'],
           message: 'a verifier has no egress',
         });
-      if (sources.includes('kiro-runtime-config'))
-        ctx.addIssue({ code: 'custom', path: ['mounts'], message: 'a verifier does not run Kiro' });
+      if (sources.includes('kiro-runtime-config') || sources.includes('kiro-session'))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['mounts'],
+          message: 'a verifier does not run Kiro and holds no Kiro credential',
+        });
     }
   });
 export type SandboxSpec = z.infer<typeof SandboxSpec>;
