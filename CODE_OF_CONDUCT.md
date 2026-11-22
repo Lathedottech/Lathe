@@ -4,6 +4,6 @@ Lathe adopts the [Contributor Covenant, version 2.1](https://www.contributor-cov
 
 ## Reporting
 
-Report conduct concerns privately through [GitHub private vulnerability reporting](https://github.com/ousssamarahmani/Lathe/security/advisories/new) on this repository, which reaches the maintainer only. Do not report conduct concerns in public issues or pull requests.
+Report conduct concerns privately through [GitHub private vulnerability reporting](https://github.com/lathedottech/Lathe/security/advisories/new) on this repository, which reaches the maintainer only. Do not report conduct concerns in public issues or pull requests.
 
 The maintainer will review every report, keep the reporter's identity confidential, and respond as described in the Contributor Covenant enforcement guidelines.
