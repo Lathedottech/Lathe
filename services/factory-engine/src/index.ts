@@ -20,3 +20,4 @@ export {
   parseSpec,
 } from './domain/spec.js';
 export type { ValidationIssue, Validated } from './domain/validated.js';
+export * from './orchestrator/index.js';
