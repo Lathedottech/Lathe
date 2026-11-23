@@ -2,4 +2,6 @@ packages:
   - packages/application-foundation
   - packages/verification-harness
   - packages/shared-contracts
-  - apps/workspace
+  # Every app, including the ones `pnpm new-app` generates, and the template they come from.
+  - apps/*
+  - templates/*
