@@ -4,6 +4,9 @@
  * Status: FROZEN, v1.2, 2026-11-21. Changes need a handoff request to `architect`.
  * v1.2 (spike P0-04, ADR 0003): `kiro-session` mount for a login session, an optional
  *   `permissionPolicy` on sessions, and `permission_request` events.
+ *   PR #15 review fix: the `kiro-session` mount path is fixed to `KIRO_SESSION_PATH`
+ *   (`/home/agent/.kiro`), outside `/workspace`, and may not overlap any other mount, so
+ *   the token cannot sit inside the target app or reach the patch.
  * Owner: architect.
  * Implemented by: `integrations/kiro` (ACP adapter, fake ACP server, Docker sandbox runner).
  * Consumed by: `services/factory-engine` (pipeline), wired in only in `src/main.ts`.
@@ -168,13 +171,42 @@ export const MountSource = z.enum([
 ]);
 export type MountSource = z.infer<typeof MountSource>;
 
+/**
+ * The only container path the `kiro-session` mount may use. It is outside
+ * `/workspace`, so the token can never sit inside the target app or any other
+ * mount, and so never reach the patch.
+ */
+export const KIRO_SESSION_PATH = '/home/agent/.kiro';
+
+/** Absolute container path with no `..` segment. */
+const AbsoluteContainerPath = z
+  .string()
+  .regex(/^(\/[A-Za-z0-9._@-]+)+$/, 'expected an absolute path')
+  .refine((p) => !p.split('/').includes('..'), '".." segments are not allowed');
+
 export const Mount = z
-  .strictObject({ source: MountSource, containerPath: ContainerPath, mode: z.enum(['ro', 'rw']) })
+  .strictObject({
+    source: MountSource,
+    containerPath: AbsoluteContainerPath,
+    mode: z.enum(['ro', 'rw']),
+  })
   .refine(
     (m) => m.source === 'target-app' || m.source === 'kiro-session' || m.mode === 'ro',
     'only the target app and the Kiro session may be mounted read-write',
+  )
+  .refine(
+    (m) =>
+      m.source === 'kiro-session'
+        ? m.containerPath === KIRO_SESSION_PATH
+        : ContainerPath.safeParse(m.containerPath).success,
+    `the kiro-session mount must be ${KIRO_SESSION_PATH}; every other mount must be under /workspace`,
   );
 export type Mount = z.infer<typeof Mount>;
+
+/** True when one path equals, contains or is nested inside the other. */
+function pathsOverlap(a: string, b: string): boolean {
+  return a === b || a.startsWith(b + '/') || b.startsWith(a + '/');
+}
 
 /** Hostname for the egress allow-list, for example `api.example.com`. No wildcards. */
 export const EgressHost = z
@@ -222,6 +254,16 @@ export const SandboxSpec = z
         code: 'custom',
         path: ['mounts'],
         message: 'each mount source may appear once',
+      });
+    const session = s.mounts.find((m) => m.source === 'kiro-session');
+    if (
+      session &&
+      s.mounts.some((m) => m !== session && pathsOverlap(m.containerPath, session.containerPath))
+    )
+      ctx.addIssue({
+        code: 'custom',
+        path: ['mounts'],
+        message: 'the kiro-session mount must not overlap any other mount',
       });
     if (!sources.includes('target-app'))
       ctx.addIssue({ code: 'custom', path: ['mounts'], message: 'the target app must be mounted' });

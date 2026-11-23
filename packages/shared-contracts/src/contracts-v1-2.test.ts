@@ -15,7 +15,7 @@ const spec = {
   image: 'lathe/sandbox@sha256:' + 'b'.repeat(64),
   mounts: [
     { source: 'target-app', containerPath: '/workspace/app', mode: 'rw' },
-    { source: 'kiro-session', containerPath: '/workspace/home', mode: 'rw' },
+    { source: 'kiro-session', containerPath: '/home/agent/.kiro', mode: 'rw' },
   ],
   secretEnv: [],
   egressAllowlist: ['runtime.us-east-1.kiro.dev'],
@@ -29,6 +29,49 @@ describe('contracts v1.2', () => {
   });
   it('an agent sandbox may mount the Kiro session read-write', () => {
     expect(SandboxSpec.safeParse(spec).success).toBe(true);
+  });
+  const withMounts = (mounts: unknown[]) => SandboxSpec.safeParse({ ...spec, mounts }).success;
+  const app = { source: 'target-app', containerPath: '/workspace/app', mode: 'rw' };
+  it('rejects a Kiro session mount inside the target app', () => {
+    expect(
+      withMounts([
+        app,
+        { source: 'kiro-session', containerPath: '/workspace/app/.kiro', mode: 'rw' },
+      ]),
+    ).toBe(false);
+  });
+  it('rejects a target app mount inside the Kiro session', () => {
+    expect(
+      withMounts([
+        { ...app, containerPath: '/home/agent/.kiro/app' },
+        { source: 'kiro-session', containerPath: '/home/agent/.kiro', mode: 'rw' },
+      ]),
+    ).toBe(false);
+  });
+  it('rejects ".." in the Kiro session path', () => {
+    expect(
+      withMounts([
+        app,
+        { source: 'kiro-session', containerPath: '/workspace/../home/agent/.kiro', mode: 'rw' },
+      ]),
+    ).toBe(false);
+    expect(
+      withMounts([
+        app,
+        { source: 'kiro-session', containerPath: '/home/agent/.kiro/..', mode: 'rw' },
+      ]),
+    ).toBe(false);
+  });
+  it('rejects any Kiro session path other than the fixed one', () => {
+    expect(
+      withMounts([app, { source: 'kiro-session', containerPath: '/workspace/home', mode: 'rw' }]),
+    ).toBe(false);
+  });
+  it('rejects a non-session mount outside /workspace', () => {
+    expect(withMounts([{ ...app, containerPath: '/home/agent/.kiro' }])).toBe(false);
+  });
+  it('accepts the valid layout', () => {
+    expect(withMounts(spec.mounts)).toBe(true);
   });
   it('a verifier may never mount the Kiro session', () => {
     expect(
