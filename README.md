@@ -1,7 +1,5 @@
 <div align="center">
-  <img src="docs/assets/brand/lathe-logo.png" alt="Lathe logo" width="140" />
-  <h1>Lathe</h1>
-  <p><strong>A verified mini software factory for agent-native development.</strong></p>
+  <img src="docs/assets/brand/lathe-logo.png" alt="Lathe: mini software factory. Build, verify and deliver with AI agents. Specs, foundation, apps, verify, delivery." width="800" />
   <p>
     <a href="#what-lathe-is">Code</a>
     ·
@@ -128,7 +126,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUC
 
 ## Security
 
-Security rules and the threat model are in [SECURITY.md](SECURITY.md). Report vulnerabilities privately through [GitHub private vulnerability reporting](https://github.com/ousssamarahmani/Lathe/security/advisories/new), never in public issues.
+Security rules and the threat model are in [SECURITY.md](SECURITY.md). Report vulnerabilities privately through [GitHub private vulnerability reporting](https://github.com/lathedottech/Lathe/security/advisories/new), never in public issues.
 
 ## License
 
