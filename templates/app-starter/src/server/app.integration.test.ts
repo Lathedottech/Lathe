@@ -32,7 +32,6 @@ const orgB = randomUUID();
 const email = (role: string, org: string) => `${role}-${run}@app-starter-org-${org}.test`;
 
 let base: string;
-let ipCounter = 0;
 const cookies = new Map<string, string>();
 
 async function signIn(who: string): Promise<string> {
@@ -42,8 +41,8 @@ async function signIn(who: string): Promise<string> {
       headers: {
         'content-type': 'application/json',
         origin: base,
-        // Distinct client addresses, so the sign-in rate limit does not trip in tests.
-        'x-forwarded-for': `198.51.100.${(ipCounter += 1)}`,
+        // A random client address per sign-in, so repeated runs never hit the sign-in rate limit.
+        'x-forwarded-for': `10.${randomBytes(3).join('.')}`,
       },
       body: JSON.stringify({ email: who, password }),
     }),
