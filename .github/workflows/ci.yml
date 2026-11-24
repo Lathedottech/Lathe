@@ -13,21 +13,24 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Actions are pinned to the commit of a release tag, so a moved tag cannot change
+# what runs. All three run on Node 24 (no Node 20 deprecation warning).
+
 jobs:
   checks:
     name: typecheck, lint, test, format
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       # Version comes from "packageManager" in package.json (pnpm 9.15.9).
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
 
       # Version comes from .nvmrc (Node 22).
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -37,3 +40,56 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm format:check
+
+  integration:
+    name: integration tests (PostgreSQL 16)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Random passwords for this run only, masked in the logs. Nothing is stored
+      # in the repository. The integration tests read this .env like a local run.
+      - name: Create throwaway database credentials
+        run: |
+          {
+            echo "POSTGRES_SUPERUSER=postgres"
+            echo "POSTGRES_DB=lathe"
+            echo "POSTGRES_PORT=5432"
+            echo "LATHE_DB_OWNER_ROLE=lathe_owner"
+            echo "LATHE_DB_APP_ROLE=lathe_app"
+          } > .env
+          for name in POSTGRES_SUPERUSER_PASSWORD LATHE_DB_OWNER_PASSWORD LATHE_DB_APP_PASSWORD; do
+            value="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+            echo "::add-mask::${value}"
+            echo "${name}=${value}" >> .env
+          done
+
+      # Same compose file and role bootstrap as local development, on a fresh volume.
+      - name: Start PostgreSQL 16
+        run: docker compose --env-file .env -f infra/docker-compose.yml up -d --wait
+
+      - name: Check database roles
+        run: |
+          docker compose --env-file .env -f infra/docker-compose.yml exec -T postgres \
+            psql -U postgres -d lathe -v ON_ERROR_STOP=1 -c \
+            "SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname IN ('lathe_owner', 'lathe_app') ORDER BY rolname;"
+
+      # Applies every migration from zero, then runs the RLS, tenancy and audit tests
+      # as the non-owner app role.
+      - run: pnpm test:integration
+
+      - name: PostgreSQL logs
+        if: failure()
+        run: docker compose --env-file .env -f infra/docker-compose.yml logs postgres
