@@ -3,6 +3,7 @@ import { GATE_ORDER, type GateId } from '@lathe/shared-contracts';
 import { notImplementedGate, type Gate } from './gate.js';
 import { staticGate, testsGate } from './gates/build-gates.js';
 import { protectedPathsGate } from './gates/protected-paths.js';
+import { securityGate } from './gates/security.js';
 
 /** Task that implements each gate. Until then the gate reports `error`. */
 const PENDING: Record<GateId, string> = {
@@ -25,5 +26,6 @@ export function defaultGates(policyDir: string): Record<GateId, Gate> {
   const staticTests = join(policyDir, 'static-tests.json');
   gates.static = staticGate(staticTests);
   gates.tests = testsGate(staticTests);
+  gates.security = securityGate();
   return gates;
 }
