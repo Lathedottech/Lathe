@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { APP_SLUG } from './app-slug';
 import { authz } from './authz';
 import { readAppEnv, readOwnerEnv } from './env';
 import { demoSeed, SEED_ORGS, SEED_PRINCIPALS } from './seed-data';
@@ -28,6 +29,14 @@ describe('environment', () => {
     } catch (error) {
       expect(String(error)).not.toContain(secret);
     }
+  });
+
+  it('uses its own database, not the foundation one, unless LATHE_APP_DB overrides it', () => {
+    expect(readAppEnv(valid).database).toBe(`lathe_${APP_SLUG.replaceAll('-', '_')}`);
+    expect(readAppEnv({ ...valid, LATHE_APP_DB: 'custom_db' }).database).toBe('custom_db');
+    expect(() => readAppEnv({ ...valid, LATHE_APP_DB: 'x; DROP DATABASE lathe' })).toThrowError(
+      /LATHE_APP_DB/,
+    );
   });
 
   it('the app environment never needs the owner role', () => {

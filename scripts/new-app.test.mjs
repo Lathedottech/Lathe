@@ -82,12 +82,19 @@ describe('newApp', () => {
       const text = await readFile(join(app, f), 'utf8');
       expect(text, f).not.toContain('app-starter');
       expect(text, f).not.toContain('App Starter');
+      // The generator only renames 'app-starter'; a derived form would keep the old name.
+      expect(text, f).not.toContain('app_starter');
       for (const id of TEMPLATE_ORG_IDS) expect(text, f).not.toContain(id);
     }
     const seed = await readFile(join(app, 'src/server/seed-data.ts'), 'utf8');
     expect(seed).toContain('00000000-0000-4000-8000-000000000001');
     expect(seed).toContain('00000000-0000-4000-8000-000000000002');
-    expect(seed).toContain("APP_SLUG = 'support-desk'");
+    const slug = await readFile(join(app, 'src/server/app-slug.ts'), 'utf8');
+    expect(slug).toContain("APP_SLUG = 'support-desk'");
+    // The contract names the new app and the seed variable C1 allows.
+    const contract = await readFile(join(app, 'src/tenant-contract.ts'), 'utf8');
+    expect(contract).toContain('app: APP_SLUG');
+    expect(contract).toContain("passwordEnv: 'LATHE_TEST_PASSWORD'");
   });
 
   it('gives each generated app different org ids by default', async () => {

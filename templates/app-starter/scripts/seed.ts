@@ -4,7 +4,7 @@
  * through Better Auth with sign-up opened for this process only; the running app
  * keeps sign-up closed. Skips if the seed already exists.
  *
- * Needs LATHE_DEMO_PASSWORD (at least 12 characters). It is never printed.
+ * Needs LATHE_TEST_PASSWORD (at least 12 characters). It is never printed.
  */
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -18,13 +18,13 @@ import { demoSeed, SEED_PRINCIPALS } from '../src/server/seed-data';
 
 export async function seed(source: EnvSource = process.env): Promise<'created' | 'exists'> {
   const env = readAppEnv(source);
-  const password = z.string().min(12).max(128).safeParse(source['LATHE_DEMO_PASSWORD']);
-  if (!password.success) throw new Error('LATHE_DEMO_PASSWORD must be set (12 to 128 characters)');
+  const password = z.string().min(12).max(128).safeParse(source['LATHE_TEST_PASSWORD']);
+  if (!password.success) throw new Error('LATHE_TEST_PASSWORD must be set (12 to 128 characters)');
 
   const pool = new pg.Pool({
     host: env.POSTGRES_HOST,
     port: env.POSTGRES_PORT,
-    database: env.POSTGRES_DB,
+    database: env.database,
     user: env.LATHE_DB_APP_ROLE,
     password: env.LATHE_DB_APP_PASSWORD,
     max: 2,

@@ -15,7 +15,7 @@ export async function migrate(source: EnvSource = process.env): Promise<string[]
   const client = new pg.Client({
     host: env.POSTGRES_HOST,
     port: env.POSTGRES_PORT,
-    database: env.POSTGRES_DB,
+    database: env.database,
     user: env.LATHE_DB_OWNER_ROLE,
     password: env.LATHE_DB_OWNER_PASSWORD,
   });

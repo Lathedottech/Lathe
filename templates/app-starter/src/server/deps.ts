@@ -18,10 +18,15 @@ export function getDeps(): AppDeps {
   const pool = new pg.Pool({
     host: env.POSTGRES_HOST,
     port: env.POSTGRES_PORT,
-    database: env.POSTGRES_DB,
+    database: env.database,
     user: env.LATHE_DB_APP_ROLE,
     password: env.LATHE_DB_APP_PASSWORD,
     max: 10,
+  });
+  // An idle connection that the server closes (restart, failover) must not crash the
+  // process. Log the error class only: driver messages can contain query details.
+  pool.on('error', (error) => {
+    console.error(`[app] database connection lost: ${error.name}`);
   });
   const db = drizzle({ client: pool });
   const baseUrl = new URL(env.LATHE_APP_BASE_URL).origin;
