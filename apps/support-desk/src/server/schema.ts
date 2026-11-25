@@ -25,6 +25,11 @@ export const tickets = tenantTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     closedAt: timestamp('closed_at', { withTimezone: true }),
+    // SLA (task P6-02, migration 0002).
+    firstResponseDueAt: timestamp('first_response_due_at', { withTimezone: true }).notNull(),
+    resolutionDueAt: timestamp('resolution_due_at', { withTimezone: true }).notNull(),
+    firstResponseAt: timestamp('first_response_at', { withTimezone: true }),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
   },
   (t) => [index('tickets_org_id_created_at_idx').on(t.orgId, t.createdAt, t.id)],
 );
