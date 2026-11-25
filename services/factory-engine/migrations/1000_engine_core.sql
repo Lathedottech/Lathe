@@ -9,7 +9,7 @@
 
 CREATE TABLE projects (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
+  org_id uuid NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
   name text NOT NULL CHECK (length(name) BETWEEN 1 AND 120),
   slug text NOT NULL CHECK (slug ~ '^[a-z][a-z0-9-]{0,62}$'),
   target_app text NOT NULL CHECK (target_app ~ '^[a-z][a-z0-9-]{0,62}$'),
@@ -24,7 +24,7 @@ CREATE TABLE projects (
 
 CREATE TABLE specs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
+  org_id uuid NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
   project_id uuid NOT NULL,
   version integer NOT NULL CHECK (version >= 1),
   title text NOT NULL CHECK (length(title) BETWEEN 1 AND 200),
@@ -34,24 +34,24 @@ CREATE TABLE specs (
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT specs_project_id_version_unique UNIQUE (project_id, version),
   CONSTRAINT specs_id_org_id_unique UNIQUE (id, org_id),
-  CONSTRAINT specs_project_fkey FOREIGN KEY (project_id, org_id) REFERENCES projects (id, org_id) ON DELETE CASCADE
+  CONSTRAINT specs_project_fkey FOREIGN KEY (project_id, org_id) REFERENCES projects (id, org_id) ON DELETE RESTRICT
 );
 CREATE INDEX specs_org_id_project_id_idx ON specs (org_id, project_id);
 
 CREATE TABLE plans (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
+  org_id uuid NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
   spec_id uuid NOT NULL,
   content_sha256 text NOT NULL CHECK (content_sha256 ~ '^[a-f0-9]{64}$'),
   status text NOT NULL CHECK (status IN ('proposed', 'approved', 'rejected', 'superseded')),
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT plans_id_org_id_unique UNIQUE (id, org_id),
-  CONSTRAINT plans_spec_fkey FOREIGN KEY (spec_id, org_id) REFERENCES specs (id, org_id) ON DELETE CASCADE
+  CONSTRAINT plans_spec_fkey FOREIGN KEY (spec_id, org_id) REFERENCES specs (id, org_id) ON DELETE RESTRICT
 );
 
 CREATE TABLE plan_tasks (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
+  org_id uuid NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
   plan_id uuid NOT NULL,
   key text NOT NULL CHECK (key ~ '^T[0-9]{1,3}$'),
   title text NOT NULL CHECK (length(title) BETWEEN 1 AND 200),
@@ -64,7 +64,7 @@ CREATE TABLE plan_tasks (
 
 CREATE TABLE runs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
+  org_id uuid NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
   project_id uuid NOT NULL,
   spec_id uuid NOT NULL,
   plan_id uuid,
@@ -77,28 +77,28 @@ CREATE TABLE runs (
   CONSTRAINT runs_id_org_id_unique UNIQUE (id, org_id),
   -- Demo fault injection only on demo runs, and only the one named fault (task P5-05).
   CONSTRAINT runs_fault_only_on_demo CHECK (fault_injection IS NULL OR (demo AND fault_injection = 'drop-tenant-filter')),
-  CONSTRAINT runs_project_fkey FOREIGN KEY (project_id, org_id) REFERENCES projects (id, org_id) ON DELETE CASCADE,
-  CONSTRAINT runs_spec_fkey FOREIGN KEY (spec_id, org_id) REFERENCES specs (id, org_id) ON DELETE CASCADE,
-  CONSTRAINT runs_plan_fkey FOREIGN KEY (plan_id, org_id) REFERENCES plans (id, org_id) ON DELETE CASCADE
+  CONSTRAINT runs_project_fkey FOREIGN KEY (project_id, org_id) REFERENCES projects (id, org_id) ON DELETE RESTRICT,
+  CONSTRAINT runs_spec_fkey FOREIGN KEY (spec_id, org_id) REFERENCES specs (id, org_id) ON DELETE RESTRICT,
+  CONSTRAINT runs_plan_fkey FOREIGN KEY (plan_id, org_id) REFERENCES plans (id, org_id) ON DELETE RESTRICT
 );
 CREATE INDEX runs_org_id_project_id_idx ON runs (org_id, project_id);
 
 CREATE TABLE run_events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
+  org_id uuid NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
   run_id uuid NOT NULL,
   seq integer NOT NULL CHECK (seq >= 0),
   type text NOT NULL CHECK (type ~ '^[a-z][a-z_]{0,62}$'),
   payload jsonb NOT NULL,
   at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT run_events_run_id_seq_unique UNIQUE (run_id, seq),
-  CONSTRAINT run_events_run_fkey FOREIGN KEY (run_id, org_id) REFERENCES runs (id, org_id) ON DELETE CASCADE
+  CONSTRAINT run_events_run_fkey FOREIGN KEY (run_id, org_id) REFERENCES runs (id, org_id) ON DELETE RESTRICT
 );
 CREATE INDEX run_events_org_id_run_id_idx ON run_events (org_id, run_id);
 
 CREATE TABLE gate_results (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
+  org_id uuid NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
   run_id uuid NOT NULL,
   attempt integer NOT NULL CHECK (attempt BETWEEN 0 AND 3),
   gate text NOT NULL CHECK (gate IN ('protected-paths', 'static', 'tests', 'tenant-isolation', 'rbac', 'properties', 'security')),
@@ -107,12 +107,12 @@ CREATE TABLE gate_results (
   report jsonb NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT gate_results_run_attempt_gate_unique UNIQUE (run_id, attempt, gate),
-  CONSTRAINT gate_results_run_fkey FOREIGN KEY (run_id, org_id) REFERENCES runs (id, org_id) ON DELETE CASCADE
+  CONSTRAINT gate_results_run_fkey FOREIGN KEY (run_id, org_id) REFERENCES runs (id, org_id) ON DELETE RESTRICT
 );
 
 CREATE TABLE approvals (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
+  org_id uuid NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
   subject_type text NOT NULL CHECK (subject_type IN ('spec', 'plan', 'delivery')),
   subject_id uuid NOT NULL,
   content_sha256 text NOT NULL CHECK (content_sha256 ~ '^[a-f0-9]{64}$'),
@@ -152,3 +152,7 @@ CREATE POLICY approvals_tenant_isolation ON approvals FOR ALL USING (org_id = ap
 REVOKE UPDATE, DELETE ON TABLE run_events FROM :"app_role";
 REVOKE UPDATE, DELETE ON TABLE gate_results FROM :"app_role";
 REVOKE UPDATE, DELETE ON TABLE approvals FROM :"app_role";
+
+-- Deleting a parent must never cascade into append-only evidence (FKs above are
+-- RESTRICT). The app role cannot delete the parents either; the owner keeps DELETE.
+REVOKE DELETE ON TABLE runs, specs, plans, projects FROM :"app_role";
