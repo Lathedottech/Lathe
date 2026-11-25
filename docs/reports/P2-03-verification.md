@@ -50,3 +50,12 @@ None for this task. The verifier container layout (P5-03) must match `apps/<app>
 
 ## 8. Recommended next task
 P2-04 tenant isolation suite, then a follow-up for the config-loosening gap above.
+
+## Fix for review item: `.fails` tests accepted by the tests gate (PR #22)
+
+- **Bug:** `it.fails`/`test.fails` pass in vitest when the body throws. Neither `TEST_SKIP` nor the report counts saw it, so the tests gate passed.
+- **Fix:** new rule `integrity.fails` (`integrity.ts`): the diff scan rejects added `.fails` in the chain form (`it/test/describe/suite/bench`, `.fails.each`, `.concurrent.fails`), bracket form, and any `x.fails(` / `x.fails.` call (covers `test.extend` tests). `testsGate` also scans test sources (`*.test|spec.*`, `__tests__`; not `node_modules`/`dist`) of the patched tree, so a pre-existing `.fails` is caught; the run is not started.
+- **Runtime check:** probed the vitest JSON reporter on an `it.fails` that throws: the test is `status: "passed"`, `meta: {}`, no `failureMessages`. The report exposes nothing, so a runtime rejection is not possible; the tree scan is the control.
+- **Rejected alternative:** diff scan only. It misses a `.fails` already in the tree.
+- **Regression:** 6 reject fixtures, 1 allow fixture (`failsafe`) and 2 gate tests. Before the fix: 7 failed, 54 passed in `build-gates.test.ts` (6 fixtures + tree test). After: all pass.
+- **Results (worktree root):** `pnpm typecheck` 0, `pnpm lint` 0, `pnpm test` 17 files / 205 tests passed, `prettier --check packages docs` 0.

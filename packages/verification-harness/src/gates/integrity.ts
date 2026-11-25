@@ -10,6 +10,7 @@ import { gitHeaderPaths, parsePatch, unquote } from './patch-parser.js';
 export const INTEGRITY_RULES = {
   focus: 'integrity.focus',
   skip: 'integrity.skip',
+  fails: 'integrity.fails',
   testConfig: 'integrity.test-config',
   lintDisable: 'integrity.lint-disable',
   staticScript: 'integrity.static-script',
@@ -110,6 +111,13 @@ const TEST_FOCUS =
   /\b(?:it|test|describe|suite|bench)(?:\.[A-Za-z]+)*\.only\b|\b(?:fit|fdescribe|ftest)\s*\(/;
 const TEST_SKIP =
   /\b(?:it|test|describe|suite|bench)(?:\.[A-Za-z]+)*\.(?:skip|todo|skipIf|runIf)\b|\b(?:xit|xdescribe|xtest)\s*\(|\b(?:ctx|context)\.skip\s*\(/;
+/**
+ * `.fails` inverts a test: vitest counts a failing body as passed. Matches the runner chain
+ * (`it.concurrent.fails`, `test.fails.each`), bracket access, and any `x.fails(` / `x.fails.` call
+ * so tests built with `test.extend` are caught too. Over-matching fails closed.
+ */
+export const TEST_FAILS =
+  /\b(?:it|test|describe|suite|bench)(?:\.[A-Za-z]+)*\.fails\b|\[\s*['"`]fails['"`]\s*\]|\.fails\b(?=\s*[(.`])/;
 const LINT_DISABLE = /eslint-disable|@ts-ignore|@ts-nocheck/;
 const SCRIPT_LINE = (names: string): RegExp => new RegExp(`^\\s*"(?:${names})[\\w:.-]*"\\s*:`);
 const TEST_SCRIPT = SCRIPT_LINE('test|pretest|posttest');
@@ -181,6 +189,15 @@ export function checkTestIntegrity(diff: string): Finding[] {
               a.line,
             ),
           );
+        if (TEST_FAILS.test(a.text))
+          out.push(
+            finding(
+              INTEGRITY_RULES.fails,
+              `patch adds an inverted (.fails) test: ${show(a.text)}`,
+              f.path,
+              a.line,
+            ),
+          );
         if (TEST_SKIP.test(a.text))
           out.push(
             finding(
@@ -224,5 +241,23 @@ export function checkTestIntegrity(diff: string): Finding[] {
             ),
           );
   }
+  return out;
+}
+
+/** Scans test sources of the patched tree for `.fails` use, including tests that predate the patch. */
+export function checkFailsInSources(files: readonly { path: string; text: string }[]): Finding[] {
+  const out: Finding[] = [];
+  for (const file of files)
+    file.text.split('\n').forEach((text, i) => {
+      if (TEST_FAILS.test(text))
+        out.push(
+          finding(
+            INTEGRITY_RULES.fails,
+            `test source uses an inverted (.fails) test: ${show(text)}`,
+            file.path,
+            i + 1,
+          ),
+        );
+    });
   return out;
 }

@@ -222,6 +222,35 @@ describe('static and tests gates', () => {
       expect(r.status).toBe('failed');
       expect(f.calls).toEqual([]);
     });
+    it('fails an it.fails test in the patched tree even when the diff is clean and the report passes', async () => {
+      await mkdir(join(root, 'apps', 'support-desk', 'src'), { recursive: true });
+      const file = join(root, 'apps', 'support-desk', 'src', 'old.test.ts');
+      await writeFile(file, "it.fails('leak', () => { throw new Error('x'); });\n");
+      try {
+        const f = fake({ report: report(3) });
+        const r = await gate(f).run(ctx(CLEAN));
+        expect(r.status).toBe('failed');
+        expect(r.findings.map((x) => x.ruleId)).toContain('integrity.fails');
+        expect(r.findings[0]).toMatchObject({ path: 'apps/support-desk/src/old.test.ts', line: 1 });
+        expect(f.calls).toEqual([]);
+      } finally {
+        await rm(join(root, 'apps', 'support-desk', 'src'), { recursive: true, force: true });
+      }
+    });
+    it('ignores .fails in node_modules and passes a tree without it', async () => {
+      const nm = join(root, 'apps', 'support-desk', 'node_modules', 'dep');
+      await mkdir(nm, { recursive: true });
+      await writeFile(join(nm, 'x.test.js'), "it.fails('x', () => {});\n");
+      try {
+        const r = await gate(fake({ report: report(3) })).run(ctx(CLEAN));
+        expect(r.status).toBe('passed');
+      } finally {
+        await rm(join(root, 'apps', 'support-desk', 'node_modules'), {
+          recursive: true,
+          force: true,
+        });
+      }
+    });
     it('fails on a timeout, errors on spawn failure and without a patch', async () => {
       expect((await gate(fake({ timedOut: true })).run(ctx(CLEAN))).findings[0]?.ruleId).toBe(
         'process.timeout',
