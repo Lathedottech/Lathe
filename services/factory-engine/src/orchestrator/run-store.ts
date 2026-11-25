@@ -29,11 +29,38 @@ export interface TransitionDecision {
  * nothing is written. Org scoping is inside the implementation.
  */
 export interface RunStore {
+  /**
+   * Implementations must call `assertValidDecision` on the locked row before
+   * writing. `capability` absent means the caller holds no Engine capability.
+   */
   transition(
     runId: string,
     decide: (current: RunSnapshot) => TransitionDecision,
+    capability?: EngineCapability,
   ): Promise<RunSnapshot>;
   listNonTerminal(): Promise<readonly RunSnapshot[]>;
+}
+
+/**
+ * Re-validates a decision against the locked current row: `next` must equal
+ * `nextSnapshot(current, next.state, capability)`. Throws a typed RunStateError.
+ */
+export function assertValidDecision(
+  current: RunSnapshot,
+  next: RunSnapshot,
+  capability?: EngineCapability,
+): void {
+  const expected = nextSnapshot(current, next.state, capability);
+  if (
+    next.runId !== expected.runId ||
+    next.state !== expected.state ||
+    next.repairAttempts !== expected.repairAttempts
+  ) {
+    throw new RunStateError(
+      'illegal_transition',
+      `Transition ${current.state} -> ${next.state} does not match the state machine`,
+    );
+  }
 }
 
 export interface TransitionOptions {
@@ -49,21 +76,25 @@ export async function transitionRun(
   options: TransitionOptions = {},
 ): Promise<RunSnapshot> {
   const reason = options.reason?.slice(0, 200);
-  return store.transition(runId, (current) => {
-    const next = nextSnapshot(current, to, options.capability);
-    return {
-      next,
-      event: {
-        type: 'state_changed',
-        payload: {
-          from: current.state,
-          to,
-          repairAttempts: next.repairAttempts,
-          ...(reason === undefined ? {} : { reason }),
+  return store.transition(
+    runId,
+    (current) => {
+      const next = nextSnapshot(current, to, options.capability);
+      return {
+        next,
+        event: {
+          type: 'state_changed',
+          payload: {
+            from: current.state,
+            to,
+            repairAttempts: next.repairAttempts,
+            ...(reason === undefined ? {} : { reason }),
+          },
         },
-      },
-    };
-  });
+      };
+    },
+    options.capability,
+  );
 }
 
 export interface ResumeItem {

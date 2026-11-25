@@ -1,6 +1,12 @@
 import { RunStateError } from './errors.js';
 import { isTerminal, type RunSnapshot } from './state-machine.js';
-import type { RunEventDraft, RunStore, TransitionDecision } from './run-store.js';
+import type { EngineCapability } from './capability.js';
+import {
+  assertValidDecision,
+  type RunEventDraft,
+  type RunStore,
+  type TransitionDecision,
+} from './run-store.js';
 
 /** In-memory RunStore for unit tests. Same atomicity contract as the Postgres store. */
 export class MemoryRunStore implements RunStore {
@@ -21,10 +27,12 @@ export class MemoryRunStore implements RunStore {
   async transition(
     runId: string,
     decide: (current: RunSnapshot) => TransitionDecision,
+    capability?: EngineCapability,
   ): Promise<RunSnapshot> {
     const current = this.runs.get(runId);
     if (!current) throw new RunStateError('run_not_found', 'Run not found');
     const { next, event } = decide(current);
+    assertValidDecision(current, next, capability);
     this.runs.set(runId, next);
     const seq = this.events.filter((e) => e.runId === runId).length;
     this.events.push({ runId, seq, ...event });
