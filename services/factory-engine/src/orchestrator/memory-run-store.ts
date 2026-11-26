@@ -3,6 +3,7 @@ import { isTerminal, type RunSnapshot } from './state-machine.js';
 import type { EngineCapability } from './capability.js';
 import {
   assertValidDecision,
+  buildTransitionEvent,
   type RunEventDraft,
   type RunStore,
   type TransitionDecision,
@@ -31,8 +32,10 @@ export class MemoryRunStore implements RunStore {
   ): Promise<RunSnapshot> {
     const current = this.runs.get(runId);
     if (!current) throw new RunStateError('run_not_found', 'Run not found');
-    const { next, event } = decide(current);
+    const decision = decide(current);
+    const next = decision.next;
     assertValidDecision(current, next, capability);
+    const event = buildTransitionEvent(current, next, decision.reason);
     this.runs.set(runId, next);
     const seq = this.events.filter((e) => e.runId === runId).length;
     this.events.push({ runId, seq, ...event });

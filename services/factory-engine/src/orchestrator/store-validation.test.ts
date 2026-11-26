@@ -30,10 +30,6 @@ const arbNext = fc.record({ state: arbState, repairAttempts: fc.integer({ min: 0
 function decision(current: RunSnapshot, next: Pick<RunSnapshot, 'state' | 'repairAttempts'>) {
   const d: TransitionDecision = {
     next: { runId: current.runId, ...next },
-    event: {
-      type: 'state_changed',
-      payload: { from: current.state, to: next.state, repairAttempts: next.repairAttempts },
-    },
   };
   return d;
 }

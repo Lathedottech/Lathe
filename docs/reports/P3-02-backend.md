@@ -23,3 +23,9 @@ Integration tests unverified. `issueEngineCapability` has no caller yet; the com
 Depends on P3-01 (done on its branch, PR base). No new dependencies.
 ## 8. Recommended next task
 P3-03 (evidence and approvals), then P3-04 (API) using `transitionRun`.
+
+## Fix round (PR #20 review by B)
+- New migration `services/factory-engine/migrations/1001_run_state_guard.sql` (1000 is already applied on main): BEFORE UPDATE trigger on `runs` (SECURITY INVOKER, owner-owned). It refuses edges outside the allowed table, any change in DELIVERED/FAILED/CANCELLED, `repair_attempts` changes other than exactly +1 on VERIFYING->REPAIRING, and changes to id, org_id, project_id, spec_id, demo, fault_injection, created_at and an already-set plan_id. Violations raise SQLSTATE 23514. A unit test compares the SQL edge list with the TypeScript table.
+- `TransitionDecision` no longer carries an event. `PgRunStore` and `MemoryRunStore` build the `run_events` row from (current, next, repairAttempts) with `buildTransitionEvent`; only `reason` (string, at most 200 chars) comes from the caller, anything else is rejected with `illegal_transition`.
+- Tests: `state-guard.integration.test.ts` (Postgres, app role; 7 failed before the fix), `event-integrity.test.ts` (unit). Results: `pnpm test` 564 passed, 5 skipped; `pnpm test:integration` 35 passed (before the fix: 7 failed, 28 passed); typecheck, lint exit 0.
+- Not covered: INSERT of a run in a non-DEFINED state is still allowed by the database.

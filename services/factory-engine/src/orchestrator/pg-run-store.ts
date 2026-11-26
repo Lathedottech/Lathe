@@ -6,7 +6,12 @@ import { runEvents, runs } from '../db/schema.js';
 import { RunStateError } from './errors.js';
 import { RUN_STATES, TERMINAL_STATES, type RunSnapshot } from './state-machine.js';
 import type { EngineCapability } from './capability.js';
-import { assertValidDecision, type RunStore, type TransitionDecision } from './run-store.js';
+import {
+  assertValidDecision,
+  buildTransitionEvent,
+  type RunStore,
+  type TransitionDecision,
+} from './run-store.js';
 
 const RunRow = z.object({
   id: z.string(),
@@ -48,8 +53,10 @@ export class PgRunStore implements RunStore {
       const [row] = await tx.select().from(runs).where(eq(runs.id, runId)).for('update');
       if (!row) throw new RunStateError('run_not_found', 'Run not found');
       const current = toSnapshot(row);
-      const { next, event } = decide(current);
+      const decision = decide(current);
+      const next = decision.next;
       assertValidDecision(current, next, capability);
+      const event = buildTransitionEvent(current, next, decision.reason);
       const [last] = await tx
         .select({ seq: max(runEvents.seq) })
         .from(runEvents)

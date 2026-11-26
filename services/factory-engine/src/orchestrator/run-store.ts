@@ -18,9 +18,15 @@ export interface RunEventDraft {
   };
 }
 
+export const MAX_REASON_LENGTH = 200;
+/**
+ * What `decide` returns. The caller proposes the next snapshot and an optional
+ * reason. The event is never supplied by the caller: the store builds it from
+ * (current, next) with `buildTransitionEvent`, so it always equals the transition.
+ */
 export interface TransitionDecision {
   readonly next: RunSnapshot;
-  readonly event: RunEventDraft;
+  readonly reason?: string;
 }
 
 /**
@@ -63,6 +69,29 @@ export function assertValidDecision(
   }
 }
 
+/**
+ * Builds the run_events row for a validated transition. Only `reason` comes from
+ * the caller: it must be a string of at most MAX_REASON_LENGTH characters.
+ */
+export function buildTransitionEvent(
+  current: RunSnapshot,
+  next: RunSnapshot,
+  reason: unknown,
+): RunEventDraft {
+  if (reason !== undefined && (typeof reason !== 'string' || reason.length > MAX_REASON_LENGTH)) {
+    throw new RunStateError('illegal_transition', 'Transition reason is invalid');
+  }
+  return {
+    type: 'state_changed',
+    payload: {
+      from: current.state,
+      to: next.state,
+      repairAttempts: next.repairAttempts,
+      ...(reason === undefined ? {} : { reason }),
+    },
+  };
+}
+
 export interface TransitionOptions {
   readonly capability?: EngineCapability;
   /** Short operator-facing note, stored in the event. Never put secrets here. */
@@ -75,23 +104,12 @@ export async function transitionRun(
   to: RunState,
   options: TransitionOptions = {},
 ): Promise<RunSnapshot> {
-  const reason = options.reason?.slice(0, 200);
+  const reason = options.reason?.slice(0, MAX_REASON_LENGTH);
   return store.transition(
     runId,
     (current) => {
       const next = nextSnapshot(current, to, options.capability);
-      return {
-        next,
-        event: {
-          type: 'state_changed',
-          payload: {
-            from: current.state,
-            to,
-            repairAttempts: next.repairAttempts,
-            ...(reason === undefined ? {} : { reason }),
-          },
-        },
-      };
+      return { next, ...(reason === undefined ? {} : { reason }) };
     },
     options.capability,
   );

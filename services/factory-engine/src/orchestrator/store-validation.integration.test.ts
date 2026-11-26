@@ -58,7 +58,6 @@ async function newRun(slug: string): Promise<string> {
 function tamper(state: RunState, repairAttempts: number) {
   return (c: RunSnapshot): TransitionDecision => ({
     next: { runId: c.runId, state, repairAttempts },
-    event: { type: 'state_changed', payload: { from: c.state, to: state, repairAttempts } },
   });
 }
 
