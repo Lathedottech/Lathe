@@ -1,0 +1,79 @@
+name: Verify
+
+# Task P8-02: re-runs `lathe-verify` on Lathe draft PRs as a second check, independent of
+# the Engine's own verifier (docs/architecture/06-github-delivery.md).
+#
+# Trust model:
+#   - `pull_request` (not `pull_request_target`): the token is read-only and no secret is
+#     available, also for PRs from forks;
+#   - the harness and the step script are checked out from the PR's BASE commit, so a PR
+#     cannot change what verifies it, even if it edits packages/verification-harness/ or
+#     this file (those edits are rejected by the protected-path gate anyway);
+#   - the PR head is checked out separately and used as data only: nothing from it is
+#     installed or run by this workflow;
+#   - PR-controlled values (branch name) reach scripts through env, never `${{ }}` in `run`.
+#
+# Only branches named `lathe/<project>/<run-id>` (contract C4 Delivery.branch) are
+# verified. Other PRs skip the job (a skipped job satisfies a required check); the step
+# script re-checks the exact branch pattern.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  lathe-verify:
+    name: lathe-verify (trusted harness)
+    if: startsWith(github.head_ref, 'lathe/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out the trusted base (harness and step script)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: trusted
+          persist-credentials: false
+
+      - name: Check out the PR head (data only)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: pr
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          package_json_file: trusted/package.json
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: trusted/.nvmrc
+          cache: pnpm
+          cache-dependency-path: trusted/pnpm-lock.yaml
+
+      # Dependencies of the trusted base only (the harness needs tsx and zod).
+      - name: Install the trusted harness
+        working-directory: trusted
+        run: pnpm install --frozen-lockfile
+
+      - name: Run lathe-verify
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: >-
+          node trusted/scripts/ci/verify-pr.mjs
+          --trusted "$GITHUB_WORKSPACE/trusted"
+          --pr "$GITHUB_WORKSPACE/pr"
+          --base "$BASE_SHA"
+          --head "$HEAD_SHA"
+          --ref "$HEAD_REF"
+          --out "$RUNNER_TEMP/lathe-verify"
