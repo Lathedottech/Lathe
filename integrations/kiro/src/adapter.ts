@@ -7,6 +7,7 @@ import { StringDecoder } from 'node:string_decoder';
 import {
   KiroEvent,
   SessionId,
+  SecretEnvName,
   SessionRequest,
   StopReason,
   type KiroAdapter,
@@ -59,6 +60,22 @@ const DEFAULTS = {
   closeTimeoutMs: 5_000,
 };
 
+/** Largest JSON size of one tool `rawInput` or `rawOutput` kept in an event. */
+const MAX_PAYLOAD_CHARS = 16_384;
+/** Events kept per session. Past this only `turn_end` is recorded, after one error event. */
+const MAX_EVENTS = 10_000;
+
+/** Replaces an oversized or unserializable payload with a small marker. */
+function capPayload(value: unknown): unknown {
+  let size: number;
+  try {
+    size = JSON.stringify(value)?.length ?? 0;
+  } catch {
+    return { truncated: true, reason: 'not serializable' };
+  }
+  return size > MAX_PAYLOAD_CHARS ? { truncated: true, originalChars: size } : value;
+}
+
 /** Longest line accepted from the child. A longer one is dropped as a protocol error. */
 const MAX_LINE_BYTES = 8 * 1024 * 1024;
 
@@ -106,11 +123,13 @@ class AcpSession implements KiroSession {
   private readonly decoder = new StringDecoder('utf8');
   private buffer = '';
   private discarding = false;
+  private overflowed = false;
 
   constructor(
     private readonly proc: AcpProcess,
     private readonly request: SessionRequest,
     private readonly cfg: typeof DEFAULTS & { now: () => Date },
+    private readonly readRoots: readonly string[],
   ) {
     this.exitedPromise = new Promise<void>((resolve) => {
       proc.onExit((info) => {
@@ -434,7 +453,7 @@ class AcpSession implements KiroSession {
           toolCallId: c.data.toolCallId,
           title: (c.data.title ?? '').slice(0, 500),
           status: c.data.status ?? 'pending',
-          input: c.data.rawInput ?? null,
+          input: capPayload(c.data.rawInput ?? null),
         });
         return;
       }
@@ -445,7 +464,7 @@ class AcpSession implements KiroSession {
           type: 'tool_call_update',
           toolCallId: c.data.toolCallId,
           status: c.data.status ?? 'in_progress',
-          ...(c.data.rawOutput !== undefined ? { output: c.data.rawOutput } : {}),
+          ...(c.data.rawOutput !== undefined ? { output: capPayload(c.data.rawOutput) } : {}),
         });
         return;
       }
@@ -477,7 +496,7 @@ class AcpSession implements KiroSession {
     }
     const { toolCall, options } = p.data;
     const policy: PermissionPolicy | undefined = this.request.permissionPolicy;
-    let decision = decidePermission(policy, toolCall);
+    let decision = decidePermission(policy, toolCall, this.readRoots);
     const allowOption = options.find((o) => o.kind === 'allow_once');
     if (decision.allowed && !allowOption)
       decision = { allowed: false, reason: 'no allow_once option offered' };
@@ -513,8 +532,19 @@ class AcpSession implements KiroSession {
     this.emit({ type: 'adapter_error', code: 'protocol_error', message: message.slice(0, 2000) });
   }
 
-  private emit(body: EventBody): void {
+  private emit(input: EventBody): void {
     if (this.finished) return;
+    let body = input;
+    if (this.seq >= MAX_EVENTS && body.type !== 'turn_end') {
+      this.ignore('event_limit');
+      if (this.overflowed) return;
+      this.overflowed = true;
+      body = {
+        type: 'adapter_error',
+        code: 'protocol_error',
+        message: `event limit of ${String(MAX_EVENTS)} reached, later events dropped`,
+      };
+    }
     const candidate = {
       ...body,
       sessionId: this.id,
@@ -576,6 +606,14 @@ class AcpSession implements KiroSession {
   }
 }
 
+/** Container paths of the mounts an agent may read: the target app and the foundation. */
+function readRootsOf(sandbox: SandboxHandle): string[] {
+  const mounts = sandbox.spec.mounts ?? [];
+  return mounts
+    .filter((m) => m.source === 'target-app' || m.source === 'application-foundation')
+    .map((m) => m.containerPath);
+}
+
 export class AcpKiroAdapter implements KiroAdapter {
   private readonly spawn: SpawnFn;
   private readonly cfg: typeof DEFAULTS & { now: () => Date };
@@ -584,6 +622,13 @@ export class AcpKiroAdapter implements KiroAdapter {
 
   constructor(options: AcpAdapterOptions = {}) {
     this.spawn = options.spawn ?? hostSpawn;
+    for (const name of options.envAllowlist ?? []) {
+      if (!SecretEnvName.safeParse(name).success)
+        throw new KiroAdapterError(
+          'invalid_request',
+          `envAllowlist may only name C2 secrets, not ${name.slice(0, 50)}`,
+        );
+    }
     this.envAllowlist = options.envAllowlist ?? [];
     this.hostEnv = options.hostEnv ?? process.env;
     this.cfg = {
@@ -606,7 +651,10 @@ export class AcpKiroAdapter implements KiroAdapter {
     const request = parsed.data;
 
     const env: Record<string, string> = {};
+    // A secret enters the child only when the sandbox spec declares it (C2 secretEnv).
+    const declared = new Set<string>(sandbox.spec.secretEnv ?? []);
     for (const name of this.envAllowlist) {
+      if (!declared.has(name)) continue;
       const value = this.hostEnv[name];
       if (value !== undefined) env[name] = value;
     }
@@ -626,7 +674,7 @@ export class AcpKiroAdapter implements KiroAdapter {
       });
     }
 
-    const session = new AcpSession(proc, request, this.cfg);
+    const session = new AcpSession(proc, request, this.cfg, readRootsOf(sandbox));
     try {
       await session.handshake();
     } catch (e) {

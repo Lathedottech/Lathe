@@ -6,18 +6,24 @@ import { listTickets } from '../../../server/tickets';
 import { NewTicketForm } from '../../_components/forms';
 import ui from '../../_components/ui.module.css';
 import { LoadError } from '../_components/load-error';
+import { SlaBadge } from '../_components/sla-badge';
 
 export const metadata: Metadata = { title: 'Tickets' };
 
 export default async function TicketsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ cursor?: string | string[]; assignee?: string | string[] }>;
+  searchParams: Promise<{
+    cursor?: string | string[];
+    assignee?: string | string[];
+    sla?: string | string[];
+  }>;
 }) {
-  const { cursor, assignee } = await searchParams;
+  const { cursor, assignee, sla } = await searchParams;
   const input: Record<string, string> = {};
   if (typeof cursor === 'string') input['cursor'] = cursor;
   if (assignee === 'me') input['assignee'] = 'me';
+  if (sla === 'breached' || sla === 'at_risk') input['sla'] = sla;
   const [page, me] = await Promise.all([load(listTickets, input), load(orgActions.getMe)]);
   if (!page.ok) return <LoadError code={page.code} />;
   const perms = me.ok ? me.value.permissions : [];
@@ -29,6 +35,8 @@ export default async function TicketsPage({
         <nav className={ui.row} aria-label="Filter">
           <Link href="/tickets">All</Link>
           <Link href="/tickets?assignee=me">Assigned to me</Link>
+          <Link href="/tickets?sla=breached">SLA breached</Link>
+          <Link href="/tickets?sla=at_risk">SLA at risk</Link>
         </nav>
       )}
       {perms.includes('tickets.create') && (
@@ -46,6 +54,7 @@ export default async function TicketsPage({
               <p className={ui.muted}>
                 {t.status} · {t.priority} · updated {new Date(t.updatedAt).toLocaleString('en')}
               </p>
+              {t.status !== 'closed' && <SlaBadge sla={t.sla} />}
             </li>
           ))}
         </ul>

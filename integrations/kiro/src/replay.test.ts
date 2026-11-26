@@ -5,7 +5,7 @@ import { SessionRequest, type SandboxHandle } from '@lathe/shared-contracts';
 import { AcpKiroAdapter } from './adapter.js';
 import { ReplayAcpServer, parseTranscript } from './testing/fake-acp-server.js';
 
-const sandbox = { id: 'sb' } as unknown as SandboxHandle;
+const sandbox = { id: 'sb', spec: { secretEnv: [], mounts: [] } } as unknown as SandboxHandle;
 
 function transcript(name: string): ReplayAcpServer {
   const url = new URL(`../fixtures/transcripts/${name}`, import.meta.url);
