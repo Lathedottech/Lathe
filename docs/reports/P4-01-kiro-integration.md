@@ -71,3 +71,12 @@ New dev dependencies in `integrations/kiro/package.json`: `@types/node` 22.20.5 
 ## 8. Recommended next task
 
 P4-02 (sandbox runner, with the `SpawnFn` that runs `kiro-cli acp` in the hardened container), then run `real-smoke.ts` inside it and replace the hand-written transcripts with recorded ones.
+
+## 9. Security fix after review (PR #33)
+- **Reads confined.** `decidePermission` now checks `read`, `search` and `think` like writes. Reads are allowed only under the target-app and application-foundation mounts (from `sandbox.spec.mounts`, falling back to the policy write roots). `KIRO_SESSION_PATH` (`/home/agent/.kiro`), `/proc`, `/sys`, `/dev` and `/etc` are always denied. A read with no path is denied. `think` with no path stays allowed.
+- **rawInput paths checked.** Every path field of `rawInput` (path, file_path, filePath, destination, target, source, from, to, newPath, oldPath, cwd, directory) and every nested string that starts with `/` must pass the same check as `locations`. A relative path in a path field is denied. Paths are normalized first and compared by segment (`/workspace/app2` is not under `/workspace/app`). Applies to execute (cwd only) and think too.
+- **Env pinned.** `envAllowlist` accepts only `SecretEnvName` values (`KIRO_API_KEY`); anything else throws `invalid_request` at construction. A name also reaches the child only if `sandbox.spec.secretEnv` declares it.
+- **Limits.** `rawInput`/`rawOutput` over 16 KiB become `{ truncated: true }`. At most 10 000 events per session; one error event marks the overflow and only `turn_end` is still recorded.
+- **Tests.** New `src/permission-policy.test.ts` (probes from review plus a fast-check property, 500 runs) and 4 new adapter tests. Before the fix: 18 failed. After: all pass. `fast-check` 4.10.3 added as a dev dependency of `integrations/kiro` (same version as the foundation).
+- **Dependency on P4-02.** Symlinks are not resolved by the policy. The sandbox must contain no link that leaves the mounts, and the container must not mount `/home/agent/.kiro` into the app tree.
+- **Checks run:** `pnpm typecheck` 0, `pnpm lint` 0, `pnpm exec prettier --check integrations docs` 0. `pnpm test` had 2 timeouts (5 s default) in `scripts/import-boundaries` under full-repo load; the same project passes alone (43 passed).

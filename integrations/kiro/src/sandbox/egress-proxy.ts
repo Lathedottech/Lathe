@@ -16,6 +16,8 @@ export const KIRO_EGRESS_HOSTS: readonly string[] = [
 ];
 
 export const PROXY_PORT = 8888;
+/** Token in the generated config that the proxy entrypoint replaces with its internal IP. */
+export const LISTEN_PLACEHOLDER = '@LISTEN_IP@';
 /** Network alias of the proxy container on the sandbox's internal network. */
 export const PROXY_ALIAS = 'egress-proxy';
 export const PROXY_URL = `http://${PROXY_ALIAS}:${PROXY_PORT}`;
@@ -49,7 +51,9 @@ export function buildProxyFilter(hosts: readonly string[]): string {
 export function buildProxyConfig(): string {
   return [
     `Port ${PROXY_PORT}`,
-    'Listen 0.0.0.0',
+    // The image entrypoint replaces the token with the proxy's address on the internal network
+    // (its alias), so the proxy never listens on the default bridge.
+    `Listen ${LISTEN_PLACEHOLDER}`,
     'Timeout 60',
     'MaxClients 20',
     'LogLevel Warning',

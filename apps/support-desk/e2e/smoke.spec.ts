@@ -48,6 +48,8 @@ test('a requester opens a ticket; staff reply with an internal note the requeste
   await signInAndChooseOrg(agent, emailOf('a', 'agent'));
   await agent.getByRole('link', { name: title }).click();
   await expect(agent.getByRole('region', { name: 'Ticket controls' })).toBeVisible();
+  // SLA (P6-02): a fresh normal ticket is on track for both targets.
+  await expect(agent.getByText(/^on track · due/)).toHaveCount(2);
   await agent.getByLabel('Reply').fill(note);
   await agent.getByLabel('Internal note (staff only)').check();
   await agent.getByRole('button', { name: 'Add reply' }).click();

@@ -12,7 +12,7 @@ import { FakeAcpServer, type FakeScript } from './testing/fake-acp-server.js';
 
 const sandbox = {
   id: 'sb-test',
-  spec: {},
+  spec: { secretEnv: ['KIRO_API_KEY'] },
   collectPatch: () => Promise.reject(new Error('not used')),
   destroy: () => Promise.resolve(),
 } as unknown as SandboxHandle;
@@ -140,10 +140,30 @@ describe('environment', () => {
 
   it('passes only allow-listed variables', async () => {
     const ctx = await capture({
-      envAllowlist: ['HOME', 'MISSING'],
-      hostEnv: { HOME: '/home/agent', SECRET: 'x' },
+      envAllowlist: ['KIRO_API_KEY'],
+      hostEnv: { KIRO_API_KEY: 'k', GITHUB_TOKEN: 'x' },
     });
-    expect(ctx.env).toEqual({ HOME: '/home/agent' });
+    expect(ctx.env).toEqual({ KIRO_API_KEY: 'k' });
+  });
+  it('throws at construction for any name outside the C2 secret set', () => {
+    for (const name of ['GITHUB_TOKEN', 'LATHE_DB_OWNER_PASSWORD', 'HOME', 'kiro_api_key'])
+      expect(() => new AcpKiroAdapter({ envAllowlist: [name] })).toThrow(KiroAdapterError);
+  });
+  it('withholds a secret the sandbox spec does not declare', async () => {
+    const declared = { ...sandbox, spec: { secretEnv: [] } } as unknown as SandboxHandle;
+    let ctx: SpawnContext | undefined;
+    const server = new FakeAcpServer({});
+    const spawn = server.asSpawn();
+    const adapter = new AcpKiroAdapter({
+      spawn: (c) => {
+        ctx = c;
+        return spawn(c);
+      },
+      envAllowlist: ['KIRO_API_KEY'],
+      hostEnv: { KIRO_API_KEY: 'k' },
+    });
+    await (await adapter.start(request(), declared)).close();
+    expect(ctx?.env).toEqual({});
   });
 });
 
@@ -352,7 +372,11 @@ describe('permission requests', () => {
         promptSteps: [
           {
             do: 'permission',
-            toolCall: { toolCallId: 'r', kind: 'read' },
+            toolCall: {
+              toolCallId: 'r',
+              kind: 'read',
+              locations: [{ path: '/workspace/app/a.ts' }],
+            },
             options: [{ optionId: 'always', kind: 'allow_always' }],
           },
         ],
@@ -439,5 +463,53 @@ describe('process failures', () => {
     await session.close();
     expect(server.killCount).toBeGreaterThan(0);
     expect(await collect(session)).toEqual([]);
+  });
+});
+
+describe('event size and count limits', () => {
+  it('replaces an oversized rawInput and rawOutput with a marker', async () => {
+    const big = 'x'.repeat(100_000);
+    const { session } = await open({
+      promptSteps: [
+        {
+          do: 'update',
+          update: {
+            sessionUpdate: 'tool_call',
+            toolCallId: 't',
+            status: 'pending',
+            rawInput: { big },
+          },
+        },
+        {
+          do: 'update',
+          update: {
+            sessionUpdate: 'tool_call_update',
+            toolCallId: 't',
+            status: 'completed',
+            rawOutput: { big },
+          },
+        },
+      ],
+    });
+    await session.prompt('go');
+    await session.close();
+    const events = await collect(session);
+    const call = events.find((e) => e.type === 'tool_call');
+    const update = events.find((e) => e.type === 'tool_call_update');
+    expect(JSON.stringify(call).length).toBeLessThan(2_000);
+    expect(JSON.stringify(update).length).toBeLessThan(2_000);
+    expect(call).toMatchObject({ input: { truncated: true } });
+    expect(update).toMatchObject({ output: { truncated: true } });
+  });
+  it('caps the events kept per session but still ends the turn', async () => {
+    const steps = Array.from({ length: 10_200 }, () => textChunk('x'));
+    const { session } = await open({ promptSteps: steps });
+    const result = await session.prompt('go');
+    expect(result.stopReason).toBe('end_turn');
+    await session.close();
+    const events = await collect(session);
+    expect(events.length).toBeLessThanOrEqual(10_002);
+    expect(events.at(-1)).toMatchObject({ type: 'turn_end' });
+    expect(events.some((e) => e.type === 'adapter_error')).toBe(true);
   });
 });

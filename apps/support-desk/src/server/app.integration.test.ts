@@ -24,6 +24,7 @@ import * as assignRoute from '../app/v1/tickets/[id]/assign/route';
 import * as commentsRoute from '../app/v1/tickets/[id]/comments/route';
 import * as ticketRoute from '../app/v1/tickets/[id]/route';
 import * as ticketsRoute from '../app/v1/tickets/route';
+import { resetClock, setClock } from './clock';
 import { closeDeps, getDeps } from './deps';
 import type { RouteHandler } from './http';
 
@@ -460,5 +461,111 @@ describe('database guarantees (hold even if application code is wrong)', () => {
       }
     }
     expect(code).toBe('23503');
+  });
+});
+
+describe('SLA (task P6-02), with an injected clock', () => {
+  const HOUR = 3_600_000;
+  let now = Date.UTC(2030, 0, 7, 9, 0, 0);
+  const advance = (ms: number) => {
+    now += ms;
+  };
+  beforeAll(() => setClock({ now: () => new Date(now) }));
+  afterAll(() => resetClock());
+
+  const sla = async (who: string, id: string) =>
+    field((await get(who, id)).json, 'sla') as {
+      firstResponse: string;
+      resolution: string;
+      overall: string;
+      firstResponseDueAt: string;
+      resolutionDueAt: string;
+    };
+
+  it('urgent: on track, at risk at 45 min, breached after 1 h; the queues follow', async () => {
+    const id = await open('a-agent', `sla urgent ${run}`, { priority: 'urgent' });
+    const s0 = await sla('a-agent', id);
+    expect(s0.firstResponseDueAt).toBe(new Date(now + HOUR).toISOString());
+    expect(s0.resolutionDueAt).toBe(new Date(now + 4 * HOUR).toISOString());
+    expect(s0.firstResponse).toBe('on_track');
+
+    advance(50 * 60_000);
+    expect((await sla('a-agent', id)).firstResponse).toBe('at_risk');
+    expect(await list('a-agent', '?sla=at_risk&limit=100')).toContain(id);
+    expect(await list('a-agent', '?sla=breached&limit=100')).not.toContain(id);
+
+    advance(11 * 60_000);
+    expect((await sla('a-agent', id)).overall).toBe('breached');
+    expect(await list('a-agent', '?sla=breached&limit=100')).toContain(id);
+    expect(await list('a-agent', '?sla=at_risk&limit=100')).not.toContain(id);
+    // Other orgs never see it in their queues.
+    expect(await list('b-owner', '?sla=breached&limit=100')).not.toContain(id);
+  });
+
+  it('only a public staff reply counts as first response; a late one is missed', async () => {
+    const id = await open('a-req', `sla first response ${run}`);
+    advance(2 * HOUR);
+    expect((await comment('a-req', id, { body: 'hello?' })).status).toBe(201);
+    expect((await comment('a-agent', id, { body: 'looking', internal: true })).status).toBe(201);
+    expect((await sla('a-agent', id)).firstResponse).toBe('on_track');
+    advance(23 * HOUR);
+    expect((await comment('a-agent', id, { body: 'we are on it' })).status).toBe(201);
+    const s = await sla('a-agent', id);
+    expect(s.firstResponse).toBe('missed');
+    expect(s.resolution).toBe('on_track');
+    // A second reply does not move the first response time.
+    const before = field((await get('a-agent', id)).json, 'firstResponseAt');
+    advance(HOUR);
+    await comment('a-admin', id, { body: 'more' });
+    expect(field((await get('a-agent', id)).json, 'firstResponseAt')).toBe(before);
+  });
+
+  it('staff replying on a ticket they opened themselves is not a first response', async () => {
+    const id = await open('a-agent', `sla own ticket ${run}`);
+    expect((await comment('a-agent', id, { body: 'note to self' })).status).toBe(201);
+    expect(field((await get('a-agent', id)).json, 'firstResponseAt')).toBeNull();
+    expect((await comment('a-agent2', id, { body: 'picked up' })).status).toBe(201);
+    expect(field((await get('a-agent', id)).json, 'firstResponseAt')).toBe(
+      new Date(now).toISOString(),
+    );
+  });
+
+  it('resolving in time meets the resolution target; reopening clears it', async () => {
+    const id = await open('a-req', `sla resolve ${run}`);
+    await comment('a-agent', id, { body: 'fixed?' });
+    advance(HOUR);
+    const resolved = await patch('a-agent', id, { status: 'resolved' });
+    expect(field(resolved.json, 'resolvedAt')).toBe(new Date(now).toISOString());
+    expect((await sla('a-req', id)).overall).toBe('met');
+    const reopened = await patch('a-agent', id, { status: 'open' });
+    expect(field(reopened.json, 'resolvedAt')).toBeNull();
+    expect((await sla('a-req', id)).resolution).toBe('on_track');
+  });
+
+  it('a priority change recomputes both due times from when the ticket was opened', async () => {
+    const opened = now;
+    const id = await open('a-req', `sla priority ${run}`);
+    expect((await sla('a-agent', id)).resolutionDueAt).toBe(
+      new Date(opened + 72 * HOUR).toISOString(),
+    );
+    advance(5 * HOUR);
+    expect((await patch('a-agent', id, { priority: 'urgent' })).status).toBe(200);
+    const s = await sla('a-agent', id);
+    expect(s.firstResponseDueAt).toBe(new Date(opened + HOUR).toISOString());
+    expect(s.overall).toBe('breached');
+  });
+
+  it("a requester's SLA queue only holds their own tickets", async () => {
+    const mine = await open('a-req', `sla mine ${run}`);
+    const theirs = await open('a-req2', `sla theirs ${run}`);
+    advance(30 * 24 * HOUR);
+    const ids = await list('a-req', '?sla=breached&limit=100');
+    expect(ids).toContain(mine);
+    expect(ids).not.toContain(theirs);
+  });
+
+  it('rejects an unknown SLA filter', async () => {
+    const r = await call(ticketsRoute.GET, 'GET', '/v1/tickets?sla=late', { who: 'a-agent' });
+    expect(r.status).toBe(400);
   });
 });

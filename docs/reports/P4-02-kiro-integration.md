@@ -55,3 +55,17 @@ All from the worktree root `C:\Users\user\Desktop\lathe-wt-p401`:
 
 ## 8. Recommended next task
 P4-03 (worktree and patch handling) or a real-Kiro smoke inside this sandbox once a session volume exists.
+
+
+## 9. Fix round for PR #34 review (git on the host over an agent-writable tree)
+
+**Finding (blocking):** `collectPatch()` ran `git add -A` with cwd in the agent-writable app dir. An agent could plant `.git/config` with `filter.<x>.clean` plus `* filter=<x>` in `.gitattributes`; git discovered that repo first and ran the filter on the host. `-c core.hooksPath/fsmonitor/pager` do not stop filters.
+
+**Fix** (`integrations/kiro/src/sandbox/git-safe.ts`, exported from `src/index.ts`, used by every git call):
+- Explicit `--git-dir=<trusted dir outside the mount>` and `--work-tree=<app dir>`; git never discovers a repo from the agent tree. New required option `DockerSandboxOptions.resolveGitDir(input)`; a git dir inside the work tree (or containing it) is refused. The git dir's root tree must correspond to the app dir (P4-03 worktree code must provide that).
+- Env: `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL`=empty temp file, `GIT_ATTR_NOSYSTEM=1`, `GIT_CEILING_DIRECTORIES`=temp root, private `GIT_INDEX_FILE` in the temp dir, plus `PATH`/`SystemRoot` only. Flags: `core.attributesFile`=empty file, `core.hooksPath`=empty dir, `core.fsmonitor=false`, `core.pager=cat`, `diff.external=`, `protocol.allow=never`, `--no-ext-diff --no-textconv`. cwd is the temp dir, not the agent dir.
+- **Fail closed:** `assertNoGitMetadata` rejects (`SandboxError` code `unsafe_git_metadata`) any `.git`, `.gitattributes` or `.gitmodules` anywhere under the app dir (also trailing dot/space and `GIT~1` aliases; uses `lstat`, does not follow symlinks). Rejected alternative: excluding them from the patch, which would silently change what the agent produced.
+- Non-blocking items done: bind sources may not be a filesystem root, the repo root (`repoRoot` option), or contain `packages/verification-harness` or `.github` (`assertSafeBindSource`); `egressAllowlist` must be a subset of `KIRO_EGRESS_HOSTS` before anything starts (the list still contains `telemetry.us-east-1.kiro.dev`; kept because Kiro expects it, review whether to drop it); tinyproxy now listens on its internal-network address (entrypoint resolves the `egress-proxy` alias, fails closed) instead of `0.0.0.0`. The proxy image changed, so its digest must be re-pinned after the next build.
+- Note (item 6): the sandbox image installs apt packages without version pins (base image is digest-pinned, Kiro CLI is version and sha256 pinned). Accepted risk for MVP; not changed.
+
+**Tests:** new `src/sandbox/git-safe.test.ts` (real git, real temp dirs): planted `.git` with clean filter does not run and is rejected; nested `.git` file, `.gitattributes` alone, `.gitmodules`, `GIT~1` rejected; a filter in a host global config (`GIT_CONFIG_GLOBAL` set, runner leaking the host env) does not run; git dir inside the tree refused; clean tree yields a patch. Before the fix 7 of 7 failed. After: kiro-integration 93 passed; root `pnpm test` 631 passed, 5 skipped; typecheck, lint, prettier clean. Live `check-sandbox` re-run with Docker (proxy image rebuilt): all 10 checks PASS.

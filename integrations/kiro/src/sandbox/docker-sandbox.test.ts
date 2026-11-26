@@ -1,8 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { afterAll, describe, expect, it } from 'vitest';
 import type { SandboxSpec } from '@lathe/shared-contracts';
 import type { SpawnContext } from '../process.js';
 import {
   DockerSandboxRunner,
+  assertSafeBindSource,
   createDockerSpawn,
   pickDockerEnv,
   type CommandResult,
@@ -29,6 +33,10 @@ const spec: SandboxSpec = {
     dockerSocket: false,
   },
 };
+const scratchRoot = mkdtempSync(path.join(tmpdir(), 'lathe-dsb-'));
+const appDir = path.join(scratchRoot, 'app');
+mkdirSync(appDir);
+afterAll(() => rmSync(scratchRoot, { recursive: true, force: true }));
 const input = { targetApp: 'support-desk', baseCommit: 'c'.repeat(40) };
 const ok: CommandResult = { code: 0, stdout: '', stderr: '' };
 
@@ -55,7 +63,8 @@ function make(runner: CommandRunner, secrets?: { KIRO_API_KEY: string }) {
     secrets,
     newId: () => 'abc123',
     resolveHostMounts: () =>
-      Promise.resolve({ 'target-app': '/srv/wt/app', 'kiro-session': 'lathe-session' }),
+      Promise.resolve({ 'target-app': appDir, 'kiro-session': 'lathe-session' }),
+    resolveGitDir: () => Promise.resolve(path.join(path.dirname(appDir), 'trusted.git')),
   });
 }
 
@@ -130,6 +139,28 @@ describe('DockerSandboxRunner', () => {
     await expect(s2.destroy()).rejects.toMatchObject({ code: 'docker_failed' });
   });
 
+  it('refuses egress hosts outside the Kiro list before starting anything', async () => {
+    const { runner, calls } = fakeRunner();
+    await expect(
+      make(runner).create(
+        { ...spec, egressAllowlist: [...KIRO_EGRESS_HOSTS, 'evil.example.com'] },
+        input,
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_spec' });
+    expect(calls).toHaveLength(0);
+  });
+
+  it('refuses a host dir that is the repo root or exposes protected paths', async () => {
+    const root = path.join(scratchRoot, 'repo');
+    mkdirSync(path.join(root, 'packages', 'verification-harness'), { recursive: true });
+    expect(() => assertSafeBindSource(root)).toThrow(/verification-harness/);
+    mkdirSync(path.join(scratchRoot, 'gh', '.github'), { recursive: true });
+    expect(() => assertSafeBindSource(path.join(scratchRoot, 'gh'))).toThrow(/\.github/);
+    expect(() => assertSafeBindSource(scratchRoot, scratchRoot)).toThrow(/repo root/);
+    expect(() => assertSafeBindSource(path.parse(scratchRoot).root)).toThrow(/root/);
+    expect(() => assertSafeBindSource(appDir, scratchRoot)).not.toThrow();
+  });
+
   it('collectPatch stages the app dir and builds a hashed patch', async () => {
     const { runner, calls } = fakeRunner((cmd, args) => {
       if (cmd !== 'git') return ok;
@@ -144,8 +175,15 @@ describe('DockerSandboxRunner', () => {
     expect(patch.files).toEqual(['src/a.ts', 'src/b.ts']);
     expect(patch.sha256).toMatch(/^[a-f0-9]{64}$/);
     const git = calls.filter((c) => c.cmd === 'git');
-    expect(git[0]?.args).toEqual(expect.arrayContaining(['core.hooksPath=/dev/null', 'add', '-A']));
-    expect(git.every((c) => Object.keys(c.env ?? {}).length === 0)).toBe(true);
+    expect(git[0]?.args).toEqual(expect.arrayContaining(['core.fsmonitor=false', 'add', '-A']));
+    expect(git.every((c) => c.args[0]?.startsWith('--git-dir=') === true)).toBe(true);
+    expect(git.every((c) => c.args[1] === `--work-tree=${appDir}`)).toBe(true);
+    expect(
+      git.every((c) => c.env?.GIT_CONFIG_NOSYSTEM === '1' && c.env.GIT_ATTR_NOSYSTEM === '1'),
+    ).toBe(true);
+    expect(
+      git.every((c) => c.env?.GITHUB_TOKEN === undefined && c.env?.KIRO_API_KEY === undefined),
+    ).toBe(true);
   });
 });
 

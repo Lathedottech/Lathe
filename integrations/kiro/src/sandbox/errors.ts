@@ -9,7 +9,8 @@ export type SandboxErrorCode =
   | 'protected_path_present'
   | 'patch_outside_target'
   | 'patch_unsafe_entry'
-  | 'patch_not_reproducible';
+  | 'patch_not_reproducible'
+  | 'unsafe_git_metadata';
 
 /** Typed failure of the sandbox runner. Messages never contain credential values. */
 export class SandboxError extends Error {
