@@ -68,7 +68,9 @@ describe('hash chain', () => {
     const cut = entries.slice(0, 3);
     expect(verifyChain(cut).ok).toBe(true);
     expect(verifyChain(cut, { length: 4 })).toMatchObject({ ok: false, reason: 'truncated' });
-    expect(verifyChain(cut, { head: entries[3]?.hash })).toMatchObject({
+    const head = entries[3]?.hash;
+    expect(head).toBeDefined();
+    expect(verifyChain(cut, head === undefined ? {} : { head })).toMatchObject({
       ok: false,
       reason: 'head_mismatch',
     });
