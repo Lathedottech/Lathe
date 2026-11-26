@@ -18,9 +18,15 @@ export interface RunEventDraft {
   };
 }
 
+export const MAX_REASON_LENGTH = 200;
+/**
+ * What `decide` returns. The caller proposes the next snapshot and an optional
+ * reason. The event is never supplied by the caller: the store builds it from
+ * (current, next) with `buildTransitionEvent`, so it always equals the transition.
+ */
 export interface TransitionDecision {
   readonly next: RunSnapshot;
-  readonly event: RunEventDraft;
+  readonly reason?: string;
 }
 
 /**
@@ -29,11 +35,61 @@ export interface TransitionDecision {
  * nothing is written. Org scoping is inside the implementation.
  */
 export interface RunStore {
+  /**
+   * Implementations must call `assertValidDecision` on the locked row before
+   * writing. `capability` absent means the caller holds no Engine capability.
+   */
   transition(
     runId: string,
     decide: (current: RunSnapshot) => TransitionDecision,
+    capability?: EngineCapability,
   ): Promise<RunSnapshot>;
   listNonTerminal(): Promise<readonly RunSnapshot[]>;
+}
+
+/**
+ * Re-validates a decision against the locked current row: `next` must equal
+ * `nextSnapshot(current, next.state, capability)`. Throws a typed RunStateError.
+ */
+export function assertValidDecision(
+  current: RunSnapshot,
+  next: RunSnapshot,
+  capability?: EngineCapability,
+): void {
+  const expected = nextSnapshot(current, next.state, capability);
+  if (
+    next.runId !== expected.runId ||
+    next.state !== expected.state ||
+    next.repairAttempts !== expected.repairAttempts
+  ) {
+    throw new RunStateError(
+      'illegal_transition',
+      `Transition ${current.state} -> ${next.state} does not match the state machine`,
+    );
+  }
+}
+
+/**
+ * Builds the run_events row for a validated transition. Only `reason` comes from
+ * the caller: it must be a string of at most MAX_REASON_LENGTH characters.
+ */
+export function buildTransitionEvent(
+  current: RunSnapshot,
+  next: RunSnapshot,
+  reason: unknown,
+): RunEventDraft {
+  if (reason !== undefined && (typeof reason !== 'string' || reason.length > MAX_REASON_LENGTH)) {
+    throw new RunStateError('illegal_transition', 'Transition reason is invalid');
+  }
+  return {
+    type: 'state_changed',
+    payload: {
+      from: current.state,
+      to: next.state,
+      repairAttempts: next.repairAttempts,
+      ...(reason === undefined ? {} : { reason }),
+    },
+  };
 }
 
 export interface TransitionOptions {
@@ -48,22 +104,15 @@ export async function transitionRun(
   to: RunState,
   options: TransitionOptions = {},
 ): Promise<RunSnapshot> {
-  const reason = options.reason?.slice(0, 200);
-  return store.transition(runId, (current) => {
-    const next = nextSnapshot(current, to, options.capability);
-    return {
-      next,
-      event: {
-        type: 'state_changed',
-        payload: {
-          from: current.state,
-          to,
-          repairAttempts: next.repairAttempts,
-          ...(reason === undefined ? {} : { reason }),
-        },
-      },
-    };
-  });
+  const reason = options.reason?.slice(0, MAX_REASON_LENGTH);
+  return store.transition(
+    runId,
+    (current) => {
+      const next = nextSnapshot(current, to, options.capability);
+      return { next, ...(reason === undefined ? {} : { reason }) };
+    },
+    options.capability,
+  );
 }
 
 export interface ResumeItem {

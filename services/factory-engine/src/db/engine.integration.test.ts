@@ -53,8 +53,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  for (const id of [orgA, orgB])
-    await withTenant(db, id, (tx) => tx.delete(organizations).where(eq(organizations.id, id)));
+  // Orgs that own engine rows cannot be deleted (ON DELETE RESTRICT), by design.
   await pool.end();
 });
 
