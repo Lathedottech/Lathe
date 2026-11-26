@@ -1,5 +1,7 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
 import {
   Patch,
   SandboxSpec,
@@ -11,23 +13,12 @@ import {
 } from '@lathe/shared-contracts';
 import { hostSpawn, type SpawnFn } from '../process.js';
 import { buildSandboxRunArgs } from './docker-args.js';
-import { buildNetworkCreateArgs, buildProxyRunArgs } from './egress-proxy.js';
+import { KIRO_EGRESS_HOSTS, buildNetworkCreateArgs, buildProxyRunArgs } from './egress-proxy.js';
+import type { CommandResult, CommandRunner } from './command.js';
 import { SandboxError } from './errors.js';
+import { assertNoGitMetadata, createSafeGitContext, runSafeGit } from './git-safe.js';
 
-export interface CommandResult {
-  code: number | null;
-  stdout: string;
-  stderr: string;
-}
-
-/** Runs a command to completion without a shell. Injected so tests never start Docker. */
-export interface CommandRunner {
-  run(
-    command: string,
-    args: readonly string[],
-    options?: { env?: Readonly<Record<string, string>>; cwd?: string },
-  ): Promise<CommandResult>;
-}
+export type { CommandResult, CommandRunner } from './command.js';
 
 export const nodeCommandRunner: CommandRunner = {
   run: (command, args, options) =>
@@ -62,6 +53,14 @@ export interface DockerSandboxOptions {
     spec: SandboxSpec,
     input: SandboxCreateInput,
   ): Promise<Readonly<Partial<Record<MountSource, string>>>>;
+  /**
+   * Trusted git directory holding aseCommit, outside every agent-writable mount. Its root tree
+   * must correspond to the target-app host directory. Git never discovers a repository from
+   * the agent's tree; see git-safe.ts.
+   */
+  resolveGitDir(input: SandboxCreateInput): Promise<string>;
+  /** Repository root on the host. A bind-mount source may not be it or contain it. */
+  repoRoot?: string | undefined;
   /** Unique, lowercase `[a-z0-9]` suffix for container and network names. */
   newId: () => string;
 }
@@ -90,6 +89,23 @@ export function pickDockerEnv(
   return out;
 }
 
+const PROTECTED_CHILDREN = [['packages', 'verification-harness'], ['.github']];
+
+/** Refuses bind sources that are a filesystem root, the repo root, or expose protected paths. */
+export function assertSafeBindSource(dir: string, repoRoot?: string): void {
+  const resolved = path.resolve(dir);
+  const isRoot = path.parse(resolved).root === resolved;
+  const same = (a: string, b: string): boolean =>
+    path.relative(a, b) === '' || path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
+  if (isRoot || (repoRoot !== undefined && same(resolved, repoRoot)))
+    throw new SandboxError('invalid_host_path', 'a bind source may not be a root or the repo root');
+  for (const parts of PROTECTED_CHILDREN)
+    if (existsSync(path.join(resolved, ...parts)))
+      throw new SandboxError(
+        'invalid_host_path',
+        `a bind source may not contain ${parts.join('/')}`,
+      );
+}
 function isMissing(result: CommandResult): boolean {
   return /no such (container|network|object)/i.test(result.stderr);
 }
@@ -101,48 +117,46 @@ class DockerSandbox implements SandboxHandle {
     readonly spec: SandboxSpec,
     private readonly input: SandboxCreateInput,
     private readonly appDir: string,
+    private readonly gitDir: string,
     private readonly extra: { proxy?: string | undefined; network?: string | undefined },
     private readonly docker: (args: readonly string[]) => Promise<CommandResult>,
     private readonly runner: CommandRunner,
   ) {}
 
   async collectPatch(): Promise<Patch> {
-    const git = async (args: string[]): Promise<string> => {
-      const r = await this.runner.run(
-        'git',
-        [
-          '-c',
-          'core.hooksPath=/dev/null',
-          '-c',
-          'core.fsmonitor=false',
-          '-c',
-          'core.pager=cat',
-          ...args,
-        ],
-        { env: {}, cwd: this.appDir },
-      );
-      if (r.code !== 0)
-        throw new SandboxError('patch_failed', `git ${args[0] ?? ''} failed: ${r.stderr.trim()}`);
-      return r.stdout;
-    };
-    const base = this.input.baseCommit;
-    await git(['add', '-A', '--', '.']);
-    const diff = await git(['diff', '--cached', '--binary', '--no-renames', '--no-ext-diff', base]);
-    const names = await git(['diff', '--cached', '--name-only', '-z', '--no-renames', base]);
-    const files = names.split('\0').filter((f) => f.length > 0);
-    const parsed = Patch.safeParse({
-      baseCommit: base,
-      diff,
-      files,
-      sha256: createHash('sha256').update(diff, 'utf8').digest('hex'),
-    });
-    if (!parsed.success)
-      throw new SandboxError('patch_failed', `patch rejected: ${parsed.error.message}`, {
-        cause: parsed.error,
+    // Fail closed before any git process starts: the agent tree may not carry git config.
+    await assertNoGitMetadata(this.appDir);
+    const ctx = await createSafeGitContext(this.gitDir, this.appDir);
+    try {
+      const git = (args: string[]): Promise<string> => runSafeGit(this.runner, ctx, args);
+      const base = this.input.baseCommit;
+      await git(['add', '-A']);
+      const diff = await git([
+        'diff',
+        '--cached',
+        '--binary',
+        '--no-renames',
+        '--no-ext-diff',
+        '--no-textconv',
+        base,
+      ]);
+      const names = await git(['diff', '--cached', '--name-only', '-z', '--no-renames', base]);
+      const files = names.split('\0').filter((f) => f.length > 0);
+      const parsed = Patch.safeParse({
+        baseCommit: base,
+        diff,
+        files,
+        sha256: createHash('sha256').update(diff, 'utf8').digest('hex'),
       });
-    return parsed.data;
+      if (!parsed.success)
+        throw new SandboxError('patch_failed', `patch rejected: ${parsed.error.message}`, {
+          cause: parsed.error,
+        });
+      return parsed.data;
+    } finally {
+      await ctx.dispose();
+    }
   }
-
   destroy(): Promise<void> {
     this.destroyed ??= this.doDestroy();
     return this.destroyed;
@@ -183,7 +197,21 @@ export class DockerSandboxRunner implements SandboxRunner {
     if (appDir === undefined)
       throw new SandboxError('missing_host_mount', 'no host path for the target app');
 
+    for (const m of spec.mounts)
+      if (m.source !== 'kiro-session' && hostMounts[m.source] !== undefined)
+        assertSafeBindSource(hostMounts[m.source] as string, this.options.repoRoot);
+    const gitDir = await this.options.resolveGitDir(input);
     const needsProxy = spec.purpose === 'agent' && spec.egressAllowlist.length > 0;
+    if (needsProxy) {
+      // KIRO_EGRESS_HOSTS includes the telemetry host (telemetry.us-east-1.kiro.dev); it stays
+      // allowed because Kiro expects it, and is called out in the P4-02 report.
+      const extra = spec.egressAllowlist.filter((h) => !KIRO_EGRESS_HOSTS.includes(h));
+      if (extra.length > 0)
+        throw new SandboxError(
+          'invalid_spec',
+          `egress hosts outside the Kiro list: ${extra.join(', ')}`,
+        );
+    }
     const network = needsProxy ? `lathe-net-${id}` : undefined;
     const proxy = needsProxy ? `lathe-proxy-${id}` : undefined;
 
@@ -218,6 +246,7 @@ export class DockerSandboxRunner implements SandboxRunner {
       spec,
       input,
       appDir,
+      gitDir,
       { proxy, network },
       (a) => docker(a),
       this.options.runner,

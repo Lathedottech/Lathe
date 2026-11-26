@@ -62,6 +62,8 @@ async function main(): Promise<number> {
     dockerEnv,
     newId: () => id,
     resolveHostMounts: () => Promise.resolve({ 'target-app': appDir, 'kiro-session': volume }),
+    // collectPatch is not exercised here, so a path outside the app dir is enough.
+    resolveGitDir: () => Promise.resolve(join(tmpdir(), 'lathe-check-trusted.git')),
   });
   const handle = await runner.create(
     {

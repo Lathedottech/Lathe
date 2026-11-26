@@ -4,7 +4,8 @@ export type SandboxErrorCode =
   | 'missing_host_mount'
   | 'invalid_name'
   | 'docker_failed'
-  | 'patch_failed';
+  | 'patch_failed'
+  | 'unsafe_git_metadata';
 
 /** Typed failure of the sandbox runner. Messages never contain credential values. */
 export class SandboxError extends Error {

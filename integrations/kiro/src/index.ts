@@ -16,7 +16,15 @@ export {
   type SandboxRunContext,
 } from './sandbox/docker-args.js';
 export {
+  assertNoGitMetadata,
+  createSafeGitContext,
+  runSafeGit,
+  safeGitPrefix,
+  type SafeGitContext,
+} from './sandbox/git-safe.js';
+export {
   DockerSandboxRunner,
+  assertSafeBindSource,
   createDockerSpawn,
   nodeCommandRunner,
   pickDockerEnv,
