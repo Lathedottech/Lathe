@@ -6,9 +6,11 @@ import {
   users,
   type OrgActionContext,
 } from '@lathe/application-foundation';
-import { and, asc, desc, eq, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { z } from 'zod';
+import { AT_RISK_RATIO, computeSla, dueTimes, type Sla } from '../sla';
 import { authz, canWorkTickets } from './authz';
+import { clock } from './clock';
 import {
   TICKET_PRIORITIES,
   TICKET_STATUSES,
@@ -39,6 +41,10 @@ export interface Ticket {
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly closedAt: string | null;
+  readonly firstResponseAt: string | null;
+  readonly resolvedAt: string | null;
+  /** SLA status at the time of the response (task P6-02). */
+  readonly sla: Sla;
 }
 
 export interface Comment {
@@ -63,7 +69,21 @@ const toTicket = (r: TicketRow): Ticket => ({
   createdAt: r.createdAt.toISOString(),
   updatedAt: r.updatedAt.toISOString(),
   closedAt: r.closedAt ? r.closedAt.toISOString() : null,
+  firstResponseAt: r.firstResponseAt ? r.firstResponseAt.toISOString() : null,
+  resolvedAt: r.resolvedAt ? r.resolvedAt.toISOString() : null,
+  sla: computeSla(
+    {
+      openedAt: r.createdAt,
+      firstResponseDueAt: r.firstResponseDueAt,
+      resolutionDueAt: r.resolutionDueAt,
+      firstResponseAt: r.firstResponseAt,
+      resolvedAt: r.resolvedAt,
+    },
+    clock.now(),
+  ),
 });
+
+const RESOLVED = new Set<string>(['resolved', 'closed']);
 
 const notFound = (): never => {
   throw new ActionError('not_found', 'not found');
@@ -88,6 +108,21 @@ async function findTicket(ctx: OrgActionContext, id: string, forUpdate = false) 
     .where(and(eq(tickets.id, id), visible(ctx)));
   const [row] = forUpdate ? await q.for('update') : await q;
   return row ?? notFound();
+}
+
+/**
+ * Tickets whose SLA is breached (a target is past due and not done), or at risk (not
+ * breached, and a target has used `AT_RISK_RATIO` of its window). Same rules as`n * `targetStatus`, in SQL, with the injected time as a parameter.
+ */
+function slaCondition(kind: 'breached' | 'at_risk', now: Date): SQL {
+  const t = sql`(${now.toISOString()})::timestamptz`;
+  const frOpen = sql`(${tickets.firstResponseAt} IS NULL)`;
+  const rsOpen = sql`(${tickets.resolvedAt} IS NULL)`;
+  const breached = sql`((${frOpen} AND ${t} > ${tickets.firstResponseDueAt}) OR (${rsOpen} AND ${t} > ${tickets.resolutionDueAt}))`;
+  if (kind === 'breached') return breached;
+  const risk = (due: SQLWrapper) =>
+    sql`(${t} - ${tickets.createdAt}) >= (${due} - ${tickets.createdAt}) * (${AT_RISK_RATIO})::float8`;
+  return sql`NOT ${breached} AND ((${frOpen} AND ${risk(tickets.firstResponseDueAt)}) OR (${rsOpen} AND ${risk(tickets.resolutionDueAt)}))`;
 }
 
 const Title = z.string().trim().min(1).max(200);
@@ -120,9 +155,12 @@ export const listTickets = defineAction(authz, {
     status: Status.optional(),
     /** `me`: only tickets assigned to the caller. */
     assignee: z.literal('me').optional(),
+    /** Staff work queues: tickets whose SLA is breached, or at risk (task P6-02). */
+    sla: z.enum(['breached', 'at_risk']).optional(),
   }),
   handler: async (ctx, input) => {
     const limit = input.limit ?? 50;
+    const now = clock.now();
     const after = input.cursor === undefined ? undefined : decodeCursor(input.cursor);
     const rows = await ctx.tx
       .select()
@@ -132,6 +170,7 @@ export const listTickets = defineAction(authz, {
           visible(ctx),
           input.status ? eq(tickets.status, input.status) : undefined,
           input.assignee === 'me' ? eq(tickets.assigneeMembershipId, ctx.membership.id) : undefined,
+          input.sla === undefined ? undefined : slaCondition(input.sla, now),
           after
             ? sql`(${tickets.createdAt}, ${tickets.id}) < (${after.t}::timestamptz, ${after.id}::uuid)`
             : undefined,
@@ -166,14 +205,19 @@ export const createTicket = defineAction(authz, {
     if (input.priority !== undefined && !can(authz, ctx.membership.role, 'tickets.triage')) {
       throw new ActionError('forbidden', 'only staff set the priority');
     }
+    const now = clock.now();
+    const priority = input.priority ?? 'normal';
     const [row] = await ctx.tx
       .insert(tickets)
       .values({
         orgId: ctx.orgId,
         title: input.title,
         body: input.body ?? '',
-        priority: input.priority ?? 'normal',
+        priority,
         requesterId: ctx.principal.userId,
+        createdAt: now,
+        updatedAt: now,
+        ...dueTimes(now, priority),
       })
       .returning();
     if (!row) throw new Error('insert into tickets returned no row');
@@ -213,13 +257,18 @@ export const updateTicket = defineAction(authz, {
       throw new ActionError('conflict', 'a closed ticket can only be reopened');
     }
     const status = input.status ?? current.status;
+    const now = clock.now();
     const [row] = await ctx.tx
       .update(tickets)
       .set({
         ...(input.title === undefined ? {} : { title: input.title }),
         ...(input.body === undefined ? {} : { body: input.body }),
-        ...(input.priority === undefined ? {} : { priority: input.priority }),
+        ...(input.priority === undefined || input.priority === current.priority
+          ? {}
+          : { priority: input.priority, ...dueTimes(current.createdAt, input.priority) }),
         status,
+        // Resolution is met the first time the ticket is resolved or closed; reopening clears it.
+        resolvedAt: RESOLVED.has(status) ? (current.resolvedAt ?? now) : null,
         closedAt: status === 'closed' ? (current.closedAt ?? sql`now()`) : null,
         updatedAt: sql`now()`,
       })
@@ -310,11 +359,14 @@ export const addComment = defineAction(authz, {
     internal: z.boolean().optional(),
   }),
   handler: async (ctx, input) => {
-    const ticket = await findTicket(ctx, input.id);
+    // Locked: the first public staff reply sets first_response_at exactly once.
+    const ticket = await findTicket(ctx, input.id, true);
     if (input.internal && !can(authz, ctx.membership.role, 'comments.internal')) {
       throw new ActionError('forbidden', 'only staff write internal notes');
     }
     if (ticket.status === 'closed') throw new ActionError('conflict', 'the ticket is closed');
+    const now = clock.now();
+    const internal = input.internal ?? false;
     const [row] = await ctx.tx
       .insert(ticketComments)
       .values({
@@ -322,10 +374,23 @@ export const addComment = defineAction(authz, {
         ticketId: ticket.id,
         authorId: ctx.principal.userId,
         body: input.body,
-        internal: input.internal ?? false,
+        internal,
+        createdAt: now,
       })
       .returning();
     if (!row) throw new Error('insert into ticket_comments returned no row');
+    // SLA first response: a public reply by staff who is not the requester. Internal notes
+    // and the requester's own replies do not count.
+    const staffReply =
+      !internal &&
+      can(authz, ctx.membership.role, 'tickets.read_all') &&
+      ctx.principal.userId !== ticket.requesterId;
+    if (staffReply && ticket.firstResponseAt === null) {
+      await ctx.tx
+        .update(tickets)
+        .set({ firstResponseAt: now, updatedAt: now })
+        .where(and(eq(tickets.id, ticket.id), eq(tickets.orgId, ctx.orgId)));
+    }
     const [author] = await ctx.tx
       .select({ name: users.name })
       .from(users)
