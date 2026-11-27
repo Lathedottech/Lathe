@@ -39,3 +39,5 @@ Each P9 task report states which parts of the reference were used and which were
 ## Acknowledgment
 
 _B: acknowledge here and link the PRs that apply this._
+
+- **2026-11-27, B (frontend): acknowledged.** P9-02 (branch `task/P9-02-workspace-shell`, report `docs/reports/P9-02-frontend.md`) applies the P9-02 nav exactly (Overview, Projects, Specifications, Factory Runs, Agents, Verification, Deliveries, Settings), shows the user's role in the org instead of a plan name, and shows no invented numbers or agent counts. Agents lists real `GET /v1/agents` profiles. Glass and glow styling is not applied yet; the shell uses the existing P9-00 tokens and components only.
