@@ -1,11 +1,11 @@
 # Task ownership mapping
 
-Generated from TASKLIST.md on 2026-11-15 (updated with the P9 UX/UI workstream), then reviewed by hand. If this file and TASKLIST.md disagree, TASKLIST.md wins and documentation fixes this file.
+Generated from TASKLIST.md on 2026-11-15 (updated with the P9 UX/UI workstream), then reviewed by hand. Person C (Marouan Ben) was added on Nov 27 with the P11 tasks; P10-01, P10-02 and P10-03 moved to C (P10-04 stays with A). Status of P11: Proposed. If this file and TASKLIST.md disagree, TASKLIST.md wins and documentation fixes this file.
 
 - **Owner** writes the code and the task report (docs/reports/<ID>-<owner>.md).
 - **Reviewer** writes docs/reviews/<ID>-<reviewer>.md and re-runs the tests. `security + architect` means both must approve. Tasks owned by `architect`, `security` or `documentation` are approved by the human, because decisions and specs need human approval.
-- **Person** is the human who leads the task and drives the agent sessions: **A** = project lead and architect, **B** = fullstack developer. The human cross-reviewer is always the other person. See [two-person-plan.md](two-person-plan.md).`n- **Tier** 1 = required for the demo (P5-07) and the submission; 2 = planned but the demo works without it; 3 = cut first. The Pri column is the original MoSCoW label and is kept for reference; Tier decides what to cut.`n- **Wave** is defined in [workstreams.md](workstreams.md).
-- `security` never owns source tasks. It owns P10-02 (checklist, docs only) and reviews.
+- **Person** is the human who leads the task and drives the agent sessions: **A** = project lead and architect, **B** = fullstack developer, **C** = release and platform readiness (Marouan Ben). The human cross-reviewer is always the other person. See [two-person-plan.md](two-person-plan.md).`n- **Tier** 1 = required for the demo (P5-07) and the submission; 2 = planned but the demo works without it; 3 = cut first. The Pri column is the original MoSCoW label and is kept for reference; Tier decides what to cut.`n- **Wave** is defined in [workstreams.md](workstreams.md).
+- `security` never owns source tasks. It owns P10-02, P11-04 and P11-09 (checklist and register, docs only) and reviews.
 - Security review is required for every task that touches identity, tenancy, authorization, sandbox, evidence, delivery, protected paths or fault injection.
 
 | ID | Title | Person | Owner (agent role) | Reviewer | Pri | Tier | Due | Depends on | Wave |
@@ -69,7 +69,19 @@ Generated from TASKLIST.md on 2026-11-15 (updated with the P9 UX/UI workstream),
 | P9-06 | Verification and delivery interface | B | frontend | security + architect | Must | 1 | Nov 30 | P9-05, P8-01, P3-03 | W5 |
 | P9-07 | Responsive polish and accessibility | B | frontend | architect | Should | 2 | Dec 2 | P9-01, P9-02, P9-03, P9-04, P9-05, P9-06 | W5 |
 | P9-08 | Read-only replay mode | B | frontend | architect | Could | 3 | Dec 2 | P9-06 | W5 |
-| P10-01 | Deploy apps and landing page | B | devops | security + architect | Must | 1 | Nov 30 | P6-02, P7-02 | W6 |
-| P10-02 | Security checklist | A | security | human | Must | 1 | Dec 1 | all Must | W6 |
-| P10-03 | README, judge guide, Kiro write-up | B | documentation | human | Must | 1 | Dec 2 | P10-01 | W6 |
+| P10-01 | Deploy apps and landing page | C | devops | security + architect (B consulted) | Must | 1 | Nov 30 | P6-02, P7-02 | W6 |
+| P10-02 | Security checklist | C | security | human (A approves) | Must | 1 | Dec 1 | all Must | W6 |
+| P10-03 | README, judge guide, Kiro write-up | C | documentation | human | Must | 1 | Dec 2 | P10-01 | W6 |
 | P10-04 | Video and submission | A | documentation | human | Must | 1 | Dec 3 | P5-07, P10-03 | W6 |
+| P11-01 | Demo product spec: Support Desk Knowledge Base | C | architect | human (A approves) | Must | 1 | Nov 28 | P3-01 | W5 |
+| P11-02 | Local setup guide and fresh-machine dry run | C | documentation | human | Must | 1 | Nov 28 | none | W5 |
+| P11-03 | Deploy artifacts and prod-like local run | C | devops | security + architect (B consulted) | Must | 1 | Nov 29 | P6-02, P7-02 | W5 |
+| P11-04 | Security checklist draft and open-findings register | C | security | human | Should | 2 | Nov 29 | none | W5 |
+| P11-05 | Demo runbook and video script draft | C | documentation | human | Should | 2 | Nov 29 | none | W5 |
+| P11-06 | Deploy both apps and the landing page | C | devops | security + architect (B consulted) | Must | 1 | Nov 30 | P11-03, human deploy approval | W6 |
+| P11-07 | Cross-tenant check against the deployed URLs | C | verification | security + architect | Must | 1 | Nov 30 | P11-06 | W6 |
+| P11-08 | Judge guide and Kiro write-up draft | C | documentation | human | Should | 2 | Nov 30 | P11-02, P11-06 | W6 |
+| P11-09 | Security checklist final pass | C | security | human (A signs off) | Must | 1 | Dec 1 | P11-04, P11-07 | W6 |
+| P11-10 | Demo dry run by a fresh tester | C | documentation | human | Should | 2 | Dec 1 | P11-05, P5-07 rehearsal | W6 |
+| P11-11 | Video storyboard and shot list | C | documentation | human | Could | 3 | Dec 1 | P11-10 | W6 |
+| P11-12 | Task status sync | C | documentation | human | Could | 3 | Dec 1 | none | W6 |

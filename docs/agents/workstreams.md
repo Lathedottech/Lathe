@@ -115,8 +115,8 @@ flowchart TD
 | W2 | Nov 18–25 | E design system P9-00 ∥ A skeleton (backend, frontend template) ∥ B harness (verification) ∥ C Kiro runtime (kiro-integration) ∥ D Engine core (backend) | G2: harness passes template app and fails every fixture; fake-agent run walks all states; Kiro returns a diff from the sandbox |
 | W3 | Nov 20–26 | Support Desk domain ∥ hierarchy + Team Ops ∥ Workspace shell, dashboard, project views (P9-02..04) | Apps pass harness; Workspace shows real Engine data |
 | W4 | Nov 25–29 | Pipeline ∥ delivery ∥ adversarial tests ∥ app UIs | G3: P5-07 rehearsal passes with real Kiro |
-| W5 | Nov 28–Dec 2 | Demo ∥ Lathe-generated modules ∥ landing page and Workspace polish (P9-01, P9-06, P9-07) | Dec 1 feature freeze |
-| W6 | Nov 30–Dec 3 | Deploy ∥ checklist ∥ docs ∥ video | Submitted by Dec 3 |
+| W5 | Nov 28–Dec 2 | Demo ∥ Lathe-generated modules ∥ landing page and Workspace polish (P9-01, P9-06, P9-07) ∥ Team C: demo spec, setup guide, deploy artifacts, checklist draft, runbook (P11-01..05, Nov 28–29) | Dec 1 feature freeze |
+| W6 | Nov 30–Dec 3 | Deploy ∥ checklist ∥ docs ∥ video ∥ Team C: deploy, deployed cross-tenant check, judge guide, checklist final, dry run, storyboard, status sync (P11-06..12, Nov 30–Dec 1) | Submitted by Dec 3 |
 
 ## What is safe to run in parallel
 
@@ -128,6 +128,7 @@ flowchart TD
 | frontend (Workspace) ∥ backend (Engine API) | API contract C4 frozen; Workspace calls the real Engine in tests, so the Engine must reach a minimal API first (P3-04) |
 | devops ∥ everyone | Owns separate files; dependency additions go through package owners |
 | documentation ∥ everyone | Reads reports; writes only docs |
+| Team C (P11) ∥ A and B | Team C paths (`specs/**`, `infra/deploy/**`, `tests/e2e/**`, `docs/setup/**`, `docs/security/**`, `docs/demo/**`, `docs/judge-guide.md`) are disjoint from A's and B's. No A or B task depends on C, except P5-07 consuming the demo spec P11-01 (soft: A can write the spec if P11-01 slips) |
 | security review ∥ next task of the author | Review verdicts gate the **merge** of a task, not the start of the next independent task |
 
 ## What must be serialized
@@ -142,6 +143,24 @@ flowchart TD
 | Any change to a frozen contract | Handoff, architect approval, consumer acknowledgment, then edit |
 | Edits to `pnpm-lock.yaml` | Generated. Re-run `pnpm install` after rebase |
 | Any task touching `packages/verification-harness/` or `.github/` | Only the owner writes; others hand off |
+| P11-06 deploy after human approval of the host (D13) and of the deploy | Agents and C never deploy without A's explicit approval |
+| `README.md` edits | C only from Nov 30; before that, handoff to C. Others send handoffs after that |
+
+## Team C sequencing
+P11-01, P11-02, P11-04 and P11-05 run in parallel on Nov 28–29. P11-03 starts Nov 29, then P11-06 → P11-07 → P11-09. P11-02 and P11-06 → P11-08. P11-05 → P11-10 → P11-11. P11-12 runs any time. Team C is not on the critical path; the critical path below is unchanged.
+
+```mermaid
+flowchart LR
+  P1101[P11-01 demo spec] -. soft input .-> P507[P5-07 demo - A]
+  P1102[P11-02 setup guide] --> P1108[P11-08 judge guide + Kiro write-up]
+  P1103[P11-03 deploy artifacts] --> P1106[P11-06 deploy - after human approval]
+  P1106 --> P1107[P11-07 deployed cross-tenant check]
+  P1106 --> P1108
+  P1104[P11-04 checklist draft] --> P1109[P11-09 checklist final]
+  P1107 --> P1109
+  P1105[P11-05 runbook + script] --> P1110[P11-10 dry run] --> P1111[P11-11 storyboard]
+  P1112[P11-12 status sync]
+```
 
 ## Critical path
 
