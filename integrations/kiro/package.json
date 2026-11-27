@@ -9,7 +9,8 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "real-smoke": "tsx scripts/real-smoke.ts"
+    "real-smoke": "tsx scripts/real-smoke.ts",
+    "check-sandbox": "tsx scripts/check-sandbox.ts"
   },
   "dependencies": {
     "@lathe/shared-contracts": "workspace:*",
