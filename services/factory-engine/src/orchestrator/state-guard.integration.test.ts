@@ -179,3 +179,58 @@ describe('PgRunStore builds the event from the transition', () => {
     expect((await row(id)).state).toBe('DEFINED');
   });
 });
+
+describe('database guards the initial run row (app role, raw INSERT)', () => {
+  async function ids(slug: string): Promise<{ projectId: string; specId: string }> {
+    return withTenant(db, org, async (tx) => {
+      const [p] = await tx
+        .insert(projects)
+        .values({ orgId: org, name: slug, slug, targetApp: 'support-desk' })
+        .returning();
+      const [s] = await tx
+        .insert(specs)
+        .values({
+          orgId: org,
+          projectId: must(p).id,
+          version: 1,
+          title: 'KB',
+          body: 'Knowledge base',
+          contentSha256: 'b'.repeat(64),
+          status: 'submitted',
+        })
+        .returning();
+      return { projectId: must(p).id, specId: must(s).id };
+    });
+  }
+  async function rawInsert(
+    slug: string,
+    state: string,
+    attempts: number,
+    withPlan: boolean,
+  ): Promise<unknown> {
+    const { projectId, specId } = await ids(slug);
+    return withTenant(db, org, async (tx) => {
+      // A random id is enough: BEFORE INSERT triggers run before FK checks.
+      const planId: string | null = withPlan ? randomUUID() : null;
+      return tx.execute(
+        sql`INSERT INTO runs (org_id, project_id, spec_id, state, repair_attempts, plan_id)
+            VALUES (${org}, ${projectId}, ${specId}, ${state}, ${attempts}, ${planId})`,
+      );
+    });
+  }
+
+  it('refuses a run inserted as DELIVERED', async () => {
+    expect(await expectPgError(() => rawInsert('i-1', 'DELIVERED', 0, false))).toBe(
+      CHECK_VIOLATION,
+    );
+  });
+  it('refuses a run inserted as BUILDING with repair_attempts = 3', async () => {
+    expect(await expectPgError(() => rawInsert('i-2', 'BUILDING', 3, false))).toBe(CHECK_VIOLATION);
+  });
+  it('refuses a DEFINED run that already has a plan_id', async () => {
+    expect(await expectPgError(() => rawInsert('i-3', 'DEFINED', 0, true))).toBe(CHECK_VIOLATION);
+  });
+  it('accepts DEFINED, 0 attempts, no plan', async () => {
+    await rawInsert('i-4', 'DEFINED', 0, false);
+  });
+});

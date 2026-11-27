@@ -1,4 +1,9 @@
--- P3-02 fix (#20): the database refuses illegal run state changes, so a bug or a
+-- Grants: this file does not grant table privileges. The app role gets DML on
+-- every table the owner role creates from the default privileges in
+-- infra/postgres/init/roles.sql.in (ALTER DEFAULT PRIVILEGES FOR ROLE owner ...
+-- TO app), not from 0001_initial.sql. A fresh engine database must have the
+-- same default privileges set before migrations run (see migrations/README.md).
+---- P3-02 fix (#20): the database refuses illegal run state changes, so a bug or a
 -- raw UPDATE by the app role cannot skip the state machine. New migration:
 -- 1000_engine_core.sql is already applied wherever main has run.
 --
@@ -86,3 +91,27 @@ CREATE TRIGGER runs_guard_update
 
 REVOKE ALL ON FUNCTION runs_guard_update() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION runs_guard_update() TO :"app_role";
+
+-- A run starts as DEFINED with no attempts and no plan. Without this, the app
+-- role could INSERT a run already in any state (for example DELIVERED).
+CREATE FUNCTION runs_guard_insert() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, public
+AS $$
+BEGIN
+  IF NEW.state IS DISTINCT FROM 'DEFINED'
+     OR NEW.repair_attempts IS DISTINCT FROM 0
+     OR NEW.plan_id IS NOT NULL
+  THEN
+    RAISE EXCEPTION 'runs: a new run must be DEFINED with 0 repair attempts and no plan'
+      USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER runs_guard_insert
+  BEFORE INSERT ON runs
+  FOR EACH ROW EXECUTE FUNCTION runs_guard_insert();
+REVOKE ALL ON FUNCTION runs_guard_insert() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION runs_guard_insert() TO :"app_role";
