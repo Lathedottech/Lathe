@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "name": "Check package on save",
+  "description": "After a source file under packages/, services/ or integrations/ is saved, typecheck and run the Vitest project of only the package that contains it.",
+  "version": "2",
+  "when": {
+    "type": "fileEdited",
+    "patterns": ["packages/**/src/**/*.ts", "services/**/src/**/*.ts", "integrations/**/src/**/*.ts"]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "A source file was saved. Find the workspace package that contains it (nearest package.json) and its name, for example @lathe/shared-contracts. If the package has a typecheck script, run `pnpm --filter <package-name> typecheck`. Then, from the repository root, run `pnpm exec vitest run --project <package-name>` (Vitest projects are listed in the root vitest.config.ts and use the package name; there is no per-package test script). If the package has no script or no Vitest project yet, say so; do not claim a pass. Report the real result. Never edit packages/verification-harness/ or .github/ to make a check pass."
+  }
+}
