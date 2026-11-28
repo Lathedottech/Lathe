@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Mount, Patch, SandboxCreateInput, type MountSource } from '@lathe/shared-contracts';
 import type { CommandRunner } from './docker-sandbox.js';
 import { SandboxError } from './errors.js';
+import { assertNoGitMetadata, createSafeGitContext, runSafeGit } from './git-safe.js';
 
 /**
  * Worktree at a base commit, sandbox mounts built from it, and the canonical patch (task P4-03).
@@ -20,14 +21,8 @@ export const PROTECTED_PREFIXES = ['packages/verification-harness', '.github'] a
 /** Runs `git <args>` in `cwd` and returns stdout. Rejects with `SandboxError` on a non-zero exit. */
 export type GitRunner = (args: readonly string[], options: { cwd: string }) => Promise<string>;
 
-/** Config that makes git output independent of the user's and the repo's settings. */
-const GIT_CONFIG = [
-  '-c',
-  'core.hooksPath=/dev/null',
-  '-c',
-  'core.fsmonitor=false',
-  '-c',
-  'core.pager=cat',
+/** Output-shaping config, applied after the safe-git prefix (which already blocks host config). */
+const OUTPUT_CONFIG = [
   '-c',
   'core.autocrlf=false',
   '-c',
@@ -42,22 +37,46 @@ const GIT_CONFIG = [
   'diff.mnemonicPrefix=false',
 ];
 
-/** Builds a `GitRunner` on a `CommandRunner`. `env` is passed to git as is (PATH etc.). */
-export function createGitRunner(
-  runner: CommandRunner,
-  env: Readonly<Record<string, string>>,
-): GitRunner {
-  return async (args, { cwd }) => {
-    const r = await runner.run('git', [...GIT_CONFIG, ...args], { env, cwd });
-    if (r.code !== 0)
-      throw new SandboxError(
-        'worktree_failed',
-        `git ${args[0] ?? ''} failed (exit ${String(r.code)}): ${r.stderr.trim()}`,
-      );
-    return r.stdout;
-  };
+/** Git dir of a trusted checkout at `cwd`: `<cwd>/.git` directory, or the target of a `.git` file. */
+async function trustedGitDirOf(cwd: string): Promise<string> {
+  const dotGit = path.join(cwd, '.git');
+  try {
+    if ((await stat(dotGit)).isDirectory()) return dotGit;
+    const m = /^gitdir:\s*(.+?)\s*$/m.exec(await readFile(dotGit, 'utf8'));
+    if (m?.[1]) return path.resolve(cwd, m[1]);
+  } catch (cause) {
+    throw new SandboxError('worktree_failed', `no git checkout at ${cwd}`, { cause });
+  }
+  throw new SandboxError('worktree_failed', `no git checkout at ${cwd}`);
 }
 
+/**
+ * Builds a `GitRunner` on a `CommandRunner`. EVERY call goes through the safe-git helper
+ * (`runSafeGit`): explicit `--git-dir`, no system or global config, no attributes file, hooks,
+ * fsmonitor and pager off, a minimal environment. `hostEnv` supplies only PATH and similar;
+ * host git configuration is never honoured. `cwd` must be the Engine's repo or one of its worktrees
+ * (their git dirs are created by the Engine, not by the agent).
+ */
+export function createGitRunner(
+  runner: CommandRunner,
+  hostEnv: Readonly<Record<string, string>>,
+): GitRunner {
+  return async (args, { cwd }) => {
+    const gitDir = await trustedGitDirOf(cwd);
+    const ctx = await createSafeGitContext(gitDir, path.resolve(cwd), hostEnv, {
+      trustedWorkTree: true,
+    });
+    try {
+      return await runSafeGit(runner, ctx, [...OUTPUT_CONFIG, ...args]);
+    } catch (cause) {
+      if (cause instanceof SandboxError && cause.code === 'patch_failed')
+        throw new SandboxError('worktree_failed', cause.message, { cause });
+      throw cause;
+    } finally {
+      await ctx.dispose();
+    }
+  };
+}
 export interface WorktreeOptions {
   /** The repository to create the worktree from. */
   repoDir: string;
@@ -202,6 +221,48 @@ export class Worktree {
   }
 
   /**
+   * Trusted git dir for `DockerSandboxOptions.resolveGitDir`: a private bare repository outside
+   * every agent-writable path, sharing the repo's objects through `objects/info/alternates`, whose
+   * HEAD is a commit with the target app's tree at its root (the app tree at `baseCommit`).
+   * Its root tree therefore matches the app host directory, as the DockerSandbox requires.
+   * The caller disposes it after the sandbox is destroyed.
+   */
+  async trustedGitDir(): Promise<{ gitDir: string; dispose: () => Promise<void> }> {
+    const { commands, git, platform } = this.options;
+    const base = this.input.baseCommit;
+    const gitDir = path.join(this.tempDir, 'trusted.git');
+    await mkdir(gitDir);
+    const common = (await git(['rev-parse', '--git-common-dir'], { cwd: this.dir })).trim();
+    const objects = path.join(path.resolve(this.dir, common), 'objects');
+    const ctx = await createSafeGitContext(gitDir, path.join(this.tempDir, 'none'), process.env);
+    try {
+      const run = (args: string[]): Promise<string> => runSafeGit(commands, ctx, args);
+      await run(['init', '--bare', '-q']);
+      await writeFile(path.join(gitDir, 'objects', 'info', 'alternates'), `${objects}\n`, 'utf8');
+      const tree = (await run(['rev-parse', `${base}:${this.appPath}`])).trim();
+      const commit = (
+        await run([
+          '-c',
+          'user.name=lathe',
+          '-c',
+          'user.email=lathe@localhost',
+          'commit-tree',
+          tree,
+          '-m',
+          `app tree of ${base}`,
+        ])
+      ).trim();
+      await run(['update-ref', 'HEAD', commit]);
+    } catch (cause) {
+      await removeDir(gitDir, commands, platform).catch(() => undefined);
+      throw cause;
+    } finally {
+      await ctx.dispose();
+    }
+    return { gitDir, dispose: () => removeDir(gitDir, commands, platform) };
+  }
+
+  /**
    * Canonical patch of the worktree against the base commit: `git diff --binary`, paths sorted
    * by git, no renames, LF, no timestamps. Any change outside the target app is an error.
    */
@@ -209,6 +270,8 @@ export class Worktree {
     const { git } = this.options;
     const cwd = this.dir;
     const base = this.input.baseCommit;
+    // Fail closed before git touches the tree: no .git, .gitattributes or .gitmodules in the app.
+    await assertNoGitMetadata(path.join(this.dir, this.appPath));
     // --sparse stages files the agent created outside the sparse cone, so they are rejected below.
     await git(['add', '--sparse', '-A', '--', '.'], { cwd });
     const raw = await git(
