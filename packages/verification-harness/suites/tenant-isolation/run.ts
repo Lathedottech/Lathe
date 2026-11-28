@@ -7,7 +7,8 @@
  *
  * Request conventions the suite relies on (not expressed by C1 v1, see the P2-04 report):
  *   - sign-in: POST `session.signIn` with JSON `{ email, password }`; the session is the cookies set;
- *   - create: JSON `{ label }`, answer JSON with `id` (and `org_id` when the table exposes it);
+ *   - create: JSON `{ label }`, answer JSON with the id in the action's `idField` (default `id`);
+ *   - org ids of a and b come from `orgIds` (the seed), never from a response;
  *   - update: JSON `{ label }`; list answers 2xx; a foreign or missing row answers 404.
  *
  * Findings never contain the password or response bodies, only rule ids, routes and statuses.
@@ -22,6 +23,11 @@ export interface TenantIsolationOptions {
   readonly password: string;
   /** Marks the rows this run creates. The caller logs it, so a run can be reproduced and cleaned. */
   readonly runId: string;
+  /**
+   * Ids of org a and org b from a trusted source (the fixture seed), never from an app response.
+   * Without them the forged-org check cannot be built, and the suite reports `isolation/org-id-unknown`.
+   */
+  readonly orgIds?: { readonly a: string; readonly b: string };
   readonly fetch?: typeof fetch;
 }
 
@@ -158,7 +164,8 @@ export async function runTenantIsolation(
 
     const marker = `lathe-iso-${opts.runId}-${t}`;
     const made = await call(alice, create, undefined, { label: marker });
-    const id = field(made.json, 'id');
+    const idField = create.idField ?? 'id';
+    const id = field(made.json, idField);
     expect(
       is2xx(made) && id !== undefined,
       'isolation/create-failed',
@@ -166,7 +173,7 @@ export async function runTenantIsolation(
       t,
     );
     if (!id) continue;
-    const orgA = field(made.json, 'org_id');
+    const orgA = opts.orgIds?.a;
     const leaks = (r: Reply): boolean => r.text.includes(marker) || r.text.includes(id);
 
     // Other principals of org b (other roles) must be isolated too.
@@ -219,7 +226,7 @@ export async function runTenantIsolation(
     if (list) {
       for (const c of attackers.values()) {
         if (!principalsWith('b', list).includes(c.principal)) continue;
-        for (const query of ['', `?org_id=${orgA ?? NEVER_EXISTED}`]) {
+        for (const query of orgA === undefined ? [''] : ['', `?org_id=${orgA}`]) {
           const r = await call(c, list, undefined, undefined, query);
           expect(
             is2xx(r) && !leaks(r),
@@ -258,21 +265,31 @@ export async function runTenantIsolation(
 
     // The org comes from the membership, never from the request.
     const bMarker = `${marker}-b`;
-    const forged = await bob.send(
-      create.http.method,
-      `${create.http.path}${orgA ? `?org_id=${orgA}` : ''}`,
-      { label: bMarker, org_id: orgA ?? NEVER_EXISTED },
-      { 'x-org-id': orgA ?? NEVER_EXISTED },
-    );
-    const bId = field(forged.json, 'id');
-    const bOrg = field(forged.json, 'org_id');
-    expect(
-      orgA === undefined || bOrg === undefined || bOrg !== orgA,
-      'isolation/org-from-input',
-      'org b created a row in org a by sending org a in the request',
-      t,
-    );
-    if (read) {
+    let bId: string | undefined;
+    if (orgA === undefined) {
+      // Never take org a's id from the app's own response: a leaky app could hide it.
+      fail(
+        'isolation/org-id-unknown',
+        'no trusted id for org a (pass orgIds from the fixture seed), so the forged-org check cannot run',
+        t,
+      );
+    } else {
+      const forged = await bob.send(
+        create.http.method,
+        `${create.http.path}?org_id=${orgA}`,
+        { label: bMarker, org_id: orgA },
+        { 'x-org-id': orgA },
+      );
+      bId = field(forged.json, idField);
+      const bOrg = field(forged.json, 'org_id');
+      expect(
+        bOrg === undefined || bOrg !== orgA,
+        'isolation/org-from-input',
+        'org b created a row in org a by sending org a in the request',
+        t,
+      );
+    }
+    if (read && orgA !== undefined) {
       const aReadsB = bId === undefined ? undefined : await call(alice, read, bId);
       expect(
         aReadsB === undefined || aReadsB.status === 404,
@@ -281,7 +298,7 @@ export async function runTenantIsolation(
         t,
       );
     }
-    if (list) {
+    if (list && orgA !== undefined) {
       const aList = await call(alice, list);
       expect(
         !aList.text.includes(bMarker),

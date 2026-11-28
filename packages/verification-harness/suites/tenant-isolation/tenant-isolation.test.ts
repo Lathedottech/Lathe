@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   fixtureContract,
+  fixtureContractWithIdField,
   startFixtureApp,
+  type FixtureOptions,
   type FixtureServer,
   type Variant,
 } from '../../fixtures/tenant-isolation/fixture-app.js';
@@ -14,13 +16,19 @@ afterEach(async () => {
   server = undefined;
 });
 
-async function run(variant: Variant, contract = fixtureContract) {
-  server = await startFixtureApp(variant);
+async function run(
+  variant: Variant,
+  contract = fixtureContract,
+  fixture: FixtureOptions = {},
+  withOrgIds = true,
+) {
+  server = await startFixtureApp(variant, fixture);
   return runTenantIsolation({
     contract,
     baseUrl: server.baseUrl,
     password: server.password,
     runId: 'test',
+    ...(withOrgIds ? { orgIds: server.orgIds } : {}),
   });
 }
 const rules = (r: { findings: readonly { ruleId: string }[] }): string[] => [
@@ -55,6 +63,34 @@ describe('tenant isolation suite', () => {
     const r = await run(variant);
     expect(r.findings.length).toBeGreaterThan(0);
     for (const rule of expected) expect(rules(r)).toContain(rule);
+  });
+
+  it('catches org-from-input when the app never returns org_id (org a id comes from the seed)', async () => {
+    const r = await run('org-from-input', fixtureContract, { stripOrgId: true });
+    expect(rules(r)).toContain('isolation/org-from-input');
+  });
+
+  it('passes the good app when org_id is stripped from every response', async () => {
+    expect((await run('good', fixtureContract, { stripOrgId: true })).findings).toEqual([]);
+  });
+
+  it('emits isolation/org-id-unknown instead of passing when no trusted org id is given', async () => {
+    const r = await run('org-from-input', fixtureContract, { stripOrgId: true }, false);
+    expect(rules(r)).toContain('isolation/org-id-unknown');
+    const good = await run('good', fixtureContract, {}, false);
+    expect(rules(good)).toContain('isolation/org-id-unknown');
+  });
+
+  it('reads the row id from the create action idField (noteId)', async () => {
+    const contract = fixtureContractWithIdField('noteId');
+    expect((await run('good', contract, { idField: 'noteId' })).findings).toEqual([]);
+    const leaky = await run('missing-org-filter', contract, { idField: 'noteId' });
+    expect(rules(leaky)).toContain('isolation/cross-read');
+  });
+
+  it('fails closed when the create response has no id under the declared idField', async () => {
+    const r = await run('good', fixtureContractWithIdField('noteId'), { idField: 'other' });
+    expect(rules(r)).toContain('isolation/create-failed');
   });
 
   it('missing-rls-policy does not leak through list, so the list check stays quiet', async () => {
@@ -112,6 +148,7 @@ describe('tenantIsolationGate', () => {
           baseUrl: s.baseUrl,
           password: s.password,
           runId: 'gate',
+          orgIds: s.orgIds,
         }),
       ).run(ctx);
       expect(out.status).toBe(status);

@@ -1,10 +1,10 @@
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { Slug, type Finding } from '@lathe/shared-contracts';
 import { z } from 'zod';
 import type { Gate, GateContext, GateOutcome } from '../gate.js';
-import { checkStaticIntegrity, checkTestIntegrity } from './integrity.js';
+import { checkFailsInSources, checkStaticIntegrity, checkTestIntegrity } from './integrity.js';
 import { runCommand, tail, type CommandRunner } from './process.js';
 
 /** `policies/static-tests.json`. Commands are constants; they never come from the agent. */
@@ -48,6 +48,31 @@ const TestReport = z.object({
 });
 
 const OUTPUT_IN_FINDING = 1_200;
+const SKIPPED_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', 'coverage']);
+const TEST_SOURCE = /\.(?:test|spec)\.[cm]?[jt]sx?$|(?:^|\/)__tests__\/.+\.[cm]?[jt]sx?$/;
+const MAX_TEST_SOURCE_BYTES = 2_000_000;
+
+/** Reads the test sources of the patched app (paths relative to the worktree, / separated). */
+async function readTestSources(
+  worktree: string,
+  dir: string,
+): Promise<{ path: string; text: string }[]> {
+  const out: { path: string; text: string }[] = [];
+  const walk = async (d: string): Promise<void> => {
+    for (const e of await readdir(d, { withFileTypes: true })) {
+      const full = join(d, e.name);
+      if (e.isDirectory()) {
+        if (!SKIPPED_DIRS.has(e.name)) await walk(full);
+      } else if (e.isFile()) {
+        const rel = relative(worktree, full).split(sep).join('/');
+        if (TEST_SOURCE.test(rel) && (await stat(full)).size <= MAX_TEST_SOURCE_BYTES)
+          out.push({ path: rel, text: await readFile(full, 'utf8') });
+      }
+    }
+  };
+  await walk(dir);
+  return out;
+}
 const result = (
   status: GateOutcome['status'],
   summary: string,
@@ -175,6 +200,14 @@ export function testsGate(policyFile: string, run: CommandRunner = runCommand): 
         );
       const app = await appDir(ctx);
       if ('error' in app) return result('error', app.error, []);
+      // The report cannot show .fails (vitest JSON has no such field), so scan the patched tree.
+      const inverted = checkFailsInSources(await readTestSources(ctx.worktree, app.dir));
+      if (inverted.length > 0)
+        return result(
+          'failed',
+          `${inverted.length} inverted (.fails) test(s); tests not run`,
+          inverted,
+        );
 
       const reportDir = await mkdtemp(join(tmpdir(), 'lathe-tests-'));
       try {

@@ -18,7 +18,7 @@ import { defineTenantContract, type TenantContract } from '@lathe/shared-contrac
 export type Variant =
   'good' | 'missing-org-filter' | 'missing-rls-policy' | 'org-from-input' | 'forbidden-on-foreign';
 
-export const PASSWORD_ENV = 'LATHE_FIXTURE_PASSWORD';
+export const PASSWORD_ENV = 'LATHE_TEST_FIXTURE_PASSWORD';
 
 export const fixtureContract: TenantContract = defineTenantContract({
   contractVersion: 1,
@@ -117,6 +117,8 @@ interface Session {
 export interface FixtureServer {
   readonly baseUrl: string;
   readonly password: string;
+  /** Org ids from the fixture's own seed: the trusted source for the forged-org check. */
+  readonly orgIds: { readonly a: string; readonly b: string };
   close(): Promise<void>;
 }
 
@@ -128,9 +130,39 @@ async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> 
   return typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : {};
 }
 
-export async function startFixtureApp(variant: Variant): Promise<FixtureServer> {
+export interface FixtureOptions {
+  /** Remove `org_id` from every JSON response, as an app that does not expose it would. */
+  readonly stripOrgId?: boolean;
+  /** Name of the response field carrying a row's id (the contract's `idField`). Default `id`. */
+  readonly idField?: string;
+}
+
+/** The fixture contract with the create action's `idField` set. */
+export function fixtureContractWithIdField(idField: string): TenantContract {
+  return defineTenantContract({
+    ...fixtureContract,
+    actions: fixtureContract.actions.map((a) => (a.kind === 'create' ? { ...a, idField } : a)),
+  });
+}
+
+export async function startFixtureApp(
+  variant: Variant,
+  options: FixtureOptions = {},
+): Promise<FixtureServer> {
   const password = randomUUID();
   const orgIds = { a: randomUUID(), b: randomUUID() };
+  const idName = options.idField ?? 'id';
+  /** Shapes a row or list for the wire: optional id rename and `org_id` removal. */
+  const shape = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(shape);
+    if (typeof v !== 'object' || v === null) return v;
+    const out: Record<string, unknown> = {};
+    for (const [k, x] of Object.entries(v)) {
+      if (k === 'org_id' && options.stripOrgId === true) continue;
+      out[k === 'id' ? idName : k] = shape(x);
+    }
+    return out;
+  };
   const rows = new Map<string, Row>();
   const sessions = new Map<string, Session>();
 
@@ -138,7 +170,7 @@ export async function startFixtureApp(variant: Variant): Promise<FixtureServer> 
     void (async () => {
       const send = (status: number, body?: unknown, headers: Record<string, string> = {}): void => {
         res.writeHead(status, { 'content-type': 'application/json', ...headers });
-        res.end(body === undefined ? '' : JSON.stringify(body));
+        res.end(body === undefined ? '' : JSON.stringify(shape(body)));
       };
       const notFound = (): void => send(404, { code: 'not_found', message: 'Not found' });
       try {
@@ -232,6 +264,7 @@ export async function startFixtureApp(variant: Variant): Promise<FixtureServer> 
   return {
     baseUrl: `http://127.0.0.1:${port}`,
     password,
+    orgIds,
     close: () =>
       new Promise<void>((resolve, reject) => {
         server.close((e) => (e ? reject(e) : resolve()));

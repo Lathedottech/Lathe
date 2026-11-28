@@ -54,3 +54,6 @@ None. P2-04 branch is the base. No new dependencies.
 
 ## 8. Recommended next task
 P2-06 (property-based suite), then P2-08 (app launcher) to register `tenantIsolationGate` and `rbacGate`. Independent re-run by the reviewer is still required.
+
+## Fix after review of PR #22 (second round)
+The RBAC and deny-by-default suites do not read an id from any response (no `id` use in `suites/rbac/`), so the `idField` rule needs no change there. The properties suite (P2-06, comment on #26) is not in this tree, so item 6 (`properties/no-ids`, `idField` in `idOf()`) is skipped and must be done on that branch.

@@ -14,10 +14,15 @@
  *   Q1 harness login: `session` names the sign-in and active-org routes; `principals`
  *      lists one test user per role in org A and in org B. Their password comes from
  *      the environment variable named in `passwordEnv`; the contract never holds it.
+ *      `passwordEnv` must match `^LATHE_TEST_[A-Z0-9_]*PASSWORD$` and the harness resolves
+ *      only names matching it, so a contract cannot make the harness read GITHUB_TOKEN,
+ *      KIRO_API_KEY, database URLs or other real secrets. `actions[].sample`, `markField`
+ *      and `idField` describe the request bodies the suites send and the id they read back.
  *   Q2 server actions: every contract action is an HTTP route. A Next.js server action
  *      must call the same `defineAction` and is not listed separately.
  *   Q3 foundation tables: `organizations` (kind `organization`) and `audit_events`
- *      (kind `audit`, append-only) are declared and checked like tenant tables.
+ *      (kind `audit`, append-only) are declared and checked like tenant tables. Exactly one
+ *      table of each kind is required and no update or delete action may target the audit table.
  *   Q4 hierarchy (org, team, project): not in v1. Task P7-01 adds it as v2.
  *   Q5 actions on several tables: `table` is the main target; `alsoTouches` lists the rest.
  *
@@ -29,7 +34,7 @@
  *   - every role has a test principal in both orgs, so no role escapes the suites.
  */
 import { z } from 'zod';
-import { RepoRelativePath, Slug, SqlIdentifier } from './common.js';
+import { Slug, SqlIdentifier } from './common.js';
 
 /** Permission name in `resource.verb` form, for example `tickets.read`. */
 export const PermissionName = z
@@ -89,6 +94,27 @@ export const HttpRoute = z.strictObject({
 });
 export type HttpRoute = z.infer<typeof HttpRoute>;
 
+/**
+ * Seed script path, relative to the app root (not the repo root). The seed runs as the
+ * app DB role, never the owner role. Absolute paths, backslashes, drive letters, `..`
+ * segments and the `.github/`, `packages/` and `node_modules/` prefixes are rejected.
+ */
+export const AppRelativePath = z
+  .string()
+  .min(1)
+  .max(200)
+  .refine((p) => !p.startsWith('/'), 'must not start with /')
+  .refine((p) => !p.includes('\\'), 'must not contain backslashes')
+  .refine((p) => !/^[A-Za-z]:/.test(p), 'must not start with a drive letter')
+  .refine((p) => !p.split('/').includes('..'), 'must not contain .. segments')
+  .refine(
+    (p) => !['.github/', 'packages/', 'node_modules/'].some((x) => p.startsWith(x)),
+    'must not start with .github/, packages/ or node_modules/',
+  );
+
+/** A body field value the suites may send. */
+export const SampleValue = z.union([z.string(), z.number(), z.boolean()]);
+
 /** A route the harness calls to exercise a table. Every route goes through `defineAction`. */
 export const TenantAction = z.strictObject({
   /** Stable id, for example `tickets.get`. */
@@ -100,6 +126,15 @@ export const TenantAction = z.strictObject({
   /** Other tables it writes or reads (Q5). */
   alsoTouches: z.array(SqlIdentifier).max(10).optional(),
   http: HttpRoute,
+  /** Create and update only: the request body the suites send. */
+  sample: z.record(z.string(), SampleValue).optional(),
+  /** Create and update only: a key of `sample` the suites may change to mark a row. */
+  markField: z.string().min(1).optional(),
+  /** Name of the response field carrying the resource id. Defaults to `id`. */
+  idField: z
+    .string()
+    .regex(/^[A-Za-z_][A-Za-z0-9_]*$/)
+    .optional(),
 });
 export type TenantAction = z.infer<typeof TenantAction>;
 
@@ -120,7 +155,7 @@ export type Principal = z.infer<typeof Principal>;
 /** How the harness creates the two orgs, their data and the principals. */
 export const TenantFixtures = z.discriminatedUnion('strategy', [
   /** Principals and orgs exist after running this script; data is created through the actions. */
-  z.strictObject({ strategy: z.literal('seed-script'), script: RepoRelativePath }),
+  z.strictObject({ strategy: z.literal('seed-script'), script: AppRelativePath }),
 ]);
 export type TenantFixtures = z.infer<typeof TenantFixtures>;
 
@@ -135,10 +170,13 @@ export const TenantContract = z
     /** Routes the harness uses to sign in and to choose the active org (Q1). */
     session: z.strictObject({ signIn: HttpRoute, setActiveOrg: HttpRoute }),
     principals: z.array(Principal).min(2),
-    /** Name of the environment variable holding the principals' password. Never the value. */
+    /**
+     * Name of the environment variable holding the principals' password. Never the value.
+     * The harness resolves only names matching this pattern.
+     */
     passwordEnv: z
       .string()
-      .regex(/^[A-Z][A-Z0-9_]{2,63}$/, 'expected an environment variable name'),
+      .regex(/^LATHE_TEST_[A-Z0-9_]*PASSWORD$/, 'expected LATHE_TEST_<name>PASSWORD'),
     fixtures: TenantFixtures,
   })
   .superRefine((c, ctx) => {
@@ -159,10 +197,16 @@ export const TenantContract = z
       issue(['actions'], `duplicate route ${r}`);
     for (const k of dup(c.principals.map((x) => x.key)))
       issue(['principals'], `duplicate principal ${k}`);
-    for (const e of dup(c.principals.map((x) => x.email)))
+    for (const e of dup(c.principals.map((x) => x.email.toLowerCase())))
       issue(['principals'], `duplicate email ${e}`);
     if (!c.tables.some((t) => t.kind === 'tenant'))
       issue(['tables'], 'at least one tenant table is required');
+
+    for (const kind of ['organization', 'audit'] as const) {
+      const n = c.tables.filter((t) => t.kind === kind).length;
+      if (n !== 1) issue(['tables'], `exactly one ${kind} table is required, found ${n}`);
+    }
+    const auditName = c.tables.find((t) => t.kind === 'audit')?.name;
 
     c.roles.forEach((role, i) => {
       role.permissions.forEach((p, j) => {
@@ -178,6 +222,28 @@ export const TenantContract = z
       }
     });
     c.actions.forEach((a, i) => {
+      if ((a.kind === 'update' || a.kind === 'delete') && a.table === auditName)
+        issue(
+          ['actions', i, 'table'],
+          `action ${a.id} may not ${a.kind} the append-only audit table`,
+        );
+      const segs = a.http.path.split('/');
+      const hasParam = segs.some((s) => s.startsWith(':'));
+      const endsWithParam = (segs[segs.length - 1] ?? '').startsWith(':');
+      if ((a.kind === 'read' || a.kind === 'update' || a.kind === 'delete') && !hasParam)
+        issue(['actions', i, 'http', 'path'], `${a.kind} action ${a.id} needs a :param segment`);
+      if ((a.kind === 'list' || a.kind === 'create') && endsWithParam)
+        issue(
+          ['actions', i, 'http', 'path'],
+          `${a.kind} action ${a.id} must not end with a :param`,
+        );
+      if (a.kind !== 'create' && a.kind !== 'update') {
+        if (a.sample) issue(['actions', i, 'sample'], 'sample is only for create and update');
+        if (a.markField)
+          issue(['actions', i, 'markField'], 'markField is only for create and update');
+      }
+      if (a.markField !== undefined && !(a.sample && a.markField in a.sample))
+        issue(['actions', i, 'markField'], 'markField must be a key of sample');
       if (!declared.has(a.permission))
         issue(
           ['actions', i, 'permission'],
