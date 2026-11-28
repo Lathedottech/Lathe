@@ -141,12 +141,13 @@ async function runSession(deps: PlanStepDeps, runId: string, prompt: string): Pr
       timeoutMs: deps.timeoutMs,
       mcpServers: [],
     };
-    session = await deps.adapter.start(request, sandbox);
+    const live = await deps.adapter.start(request, sandbox);
+    session = live;
     const chunks: string[] = [];
     let adapterError: string | undefined;
     let length = 0;
     const collect = (async () => {
-      for await (const e of session!.events() as AsyncIterable<KiroEvent>) {
+      for await (const e of live.events() as AsyncIterable<KiroEvent>) {
         if (e.type === 'agent_message_chunk' && length < MAX_OUTPUT_CHARS) {
           chunks.push(e.text);
           length += e.text.length;
