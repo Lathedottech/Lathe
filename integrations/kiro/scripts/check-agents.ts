@@ -3,7 +3,7 @@
  * NOT run by `pnpm test`: needs Docker, the image `lathe/sandbox:p4-02` and a logged-in CLI
  * (`kiro agent validate` refuses to run without a login). Exits 2 when it cannot run.
  *
- *   pnpm --filter @lathe/kiro-integration exec tsx scripts/check-agents.ts
+ *   node --experimental-strip-types scripts/check-agents.ts   (cwd: integrations/kiro)
  */
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
