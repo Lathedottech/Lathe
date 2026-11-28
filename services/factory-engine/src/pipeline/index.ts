@@ -39,6 +39,17 @@ export {
   type VerifyStepResult,
 } from './verify.js';
 export {
+  buildPullRequestContent,
+  deliveryApprovalSubject,
+  runDeliverStep,
+  type DeliverRefusalReason,
+  type DeliverStepDeps,
+  type DeliverStepResult,
+  type DeliveryApprovals,
+  type DeliveryPort,
+  type PullRequestContent,
+} from './deliver.js';
+export {
   PLAN_MAX_ATTEMPTS,
   buildPlannerPrompt,
   extractJsonObjects,
