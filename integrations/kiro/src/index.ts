@@ -47,3 +47,18 @@ export {
   type SpawnContext,
   type SpawnFn,
 } from './process.js';
+export {
+  FOUNDATION_PATH,
+  PROTECTED_PREFIXES,
+  Worktree,
+  createGitRunner,
+  removeDir,
+  type GitRunner,
+  type PatchResult,
+  type ReproducibleResult,
+  type WorktreeOptions,
+} from './sandbox/worktree.js';
+export {
+  worktreeSandboxResolvers,
+  type WorktreeSandboxResolvers,
+} from './sandbox/worktree-sandbox.js';

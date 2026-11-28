@@ -68,15 +68,25 @@ function isInside(parent: string, child: string): boolean {
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
+export interface SafeGitOptions {
+  /**
+   * For the Engine's own repository and its worktrees, whose git dir is trusted and may sit
+   * inside the work tree: skips the "git dir outside work tree" check and uses the repository's
+   * own index instead of a private one. Never set this for an agent-writable directory.
+   */
+  trustedWorkTree?: boolean;
+}
+
 /** Creates the scratch files and the environment used by every git call. */
 export async function createSafeGitContext(
   gitDir: string,
   workTree: string,
   hostEnv: Readonly<Record<string, string | undefined>> = process.env,
+  options: SafeGitOptions = {},
 ): Promise<SafeGitContext> {
   if (!path.isAbsolute(gitDir) || !path.isAbsolute(workTree))
     throw new SandboxError('invalid_host_path', 'git dir and work tree must be absolute paths');
-  if (isInside(workTree, gitDir) || isInside(gitDir, workTree))
+  if (!options.trustedWorkTree && (isInside(workTree, gitDir) || isInside(gitDir, workTree)))
     throw new SandboxError(
       'invalid_host_path',
       'the trusted git dir must be outside the agent work tree (and not contain it)',
@@ -91,10 +101,10 @@ export async function createSafeGitContext(
     GIT_CONFIG_GLOBAL: emptyConfig,
     GIT_ATTR_NOSYSTEM: '1',
     GIT_CEILING_DIRECTORIES: scratch,
-    GIT_INDEX_FILE: path.join(scratch, 'index'),
     GIT_OPTIONAL_LOCKS: '0',
     GIT_TERMINAL_PROMPT: '0',
   };
+  if (!options.trustedWorkTree) env.GIT_INDEX_FILE = path.join(scratch, 'index');
   // Only what the git executable needs to start. Never credentials.
   for (const n of ['PATH', 'Path', 'SystemRoot']) {
     const v = hostEnv[n];

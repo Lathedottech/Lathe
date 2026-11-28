@@ -5,6 +5,11 @@ export type SandboxErrorCode =
   | 'invalid_name'
   | 'docker_failed'
   | 'patch_failed'
+  | 'worktree_failed'
+  | 'protected_path_present'
+  | 'patch_outside_target'
+  | 'patch_unsafe_entry'
+  | 'patch_not_reproducible'
   | 'unsafe_git_metadata';
 
 /** Typed failure of the sandbox runner. Messages never contain credential values. */

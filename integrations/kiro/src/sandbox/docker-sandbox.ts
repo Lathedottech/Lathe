@@ -123,13 +123,19 @@ class DockerSandbox implements SandboxHandle {
     private readonly runner: CommandRunner,
   ) {}
 
+  /**
+   * LEGACY host-dir path, kept for the P4-02 tests. Production collects the patch with
+   * Worktree.collectPatch() (repo-relative paths, protected-path check, reproducibility proof).
+   * TODO(P5-02): remove this method when the pipeline calls Worktree directly.
+   */
   async collectPatch(): Promise<Patch> {
     // Fail closed before any git process starts: the agent tree may not carry git config.
     await assertNoGitMetadata(this.appDir);
     const ctx = await createSafeGitContext(this.gitDir, this.appDir);
     try {
       const git = (args: string[]): Promise<string> => runSafeGit(this.runner, ctx, args);
-      const base = this.input.baseCommit;
+      // HEAD of the trusted git dir is the commit whose root tree is the app tree at baseCommit.
+      const base = 'HEAD';
       await git(['add', '-A']);
       const diff = await git([
         'diff',
@@ -143,7 +149,7 @@ class DockerSandbox implements SandboxHandle {
       const names = await git(['diff', '--cached', '--name-only', '-z', '--no-renames', base]);
       const files = names.split('\0').filter((f) => f.length > 0);
       const parsed = Patch.safeParse({
-        baseCommit: base,
+        baseCommit: this.input.baseCommit,
         diff,
         files,
         sha256: createHash('sha256').update(diff, 'utf8').digest('hex'),
