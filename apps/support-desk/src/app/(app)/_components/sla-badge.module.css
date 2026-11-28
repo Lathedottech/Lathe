@@ -1,0 +1,56 @@
+/* SLA status colors. Tokens only. */
+.badge {
+  display: inline-block;
+  font-size: var(--font-size-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--status-neutral-bg);
+  color: var(--status-neutral-text);
+}
+
+.badge.met,
+.badge.on_track {
+  background: var(--status-success-bg);
+  color: var(--status-success-text);
+}
+
+.badge.at_risk {
+  background: var(--status-warning-bg);
+  color: var(--status-warning-text);
+}
+
+.badge.missed,
+.badge.breached {
+  background: var(--status-danger-bg);
+  color: var(--status-danger-text);
+}
+
+.detail {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+
+.detail dt {
+  color: var(--text-muted);
+}
+
+.detail dd {
+  margin: 0;
+}
+
+.detail .met,
+.detail .on_track {
+  color: var(--status-success-text);
+}
+
+.detail .at_risk {
+  color: var(--status-warning-text);
+}
+
+.detail .missed,
+.detail .breached {
+  color: var(--status-danger-text);
+}

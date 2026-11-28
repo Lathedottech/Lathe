@@ -27,7 +27,7 @@ This file is always loaded by Kiro. It only routes you to the real rules, which 
 | Where Crew, MCP, agents, steering, hooks and specs are used | `docs/architecture/10-kiro-usage-map.md` |
 | Owner, reviewer and wave of each task | `docs/agents/task-ownership.md` |
 | Parallel plan and gates | `docs/agents/workstreams.md` |
-| Two humans (A lead, B fullstack): tracks, review policy, cut ladder | `docs/agents/two-person-plan.md` |
+| Three humans (A lead, B fullstack, C release and platform): tracks, review policy, cut ladder | `docs/agents/two-person-plan.md` |
 | Tasks and dates | `TASKLIST.md`, `IMPLEMENTATION_PLAN.md` |
 
 ## Before any task

@@ -37,7 +37,7 @@ Agent definitions: `.kiro/agents/*.md`. Rules for the team: `.kiro/steering/` (r
 
 | Path | Owner | Notes |
 |---|---|---|
-| `AGENTS.md`, `ARCHITECTURE.md`, `docs/adr/**`, `.kiro/agents/**`, `.kiro/steering/**`, `.kiro/specs/**`, `specs/**`, `docs/agents/**` | architect | Human approves content |
+| `AGENTS.md`, `ARCHITECTURE.md`, `docs/adr/**`, `.kiro/agents/**`, `.kiro/steering/**`, `.kiro/specs/**`, `docs/agents/**` | architect | Human approves content |
 | `packages/shared-contracts/**` | architect | Single-writer. Everyone else consumes (types and Zod only) |
 | `services/factory-engine/**` (db, domain, orchestrator, pipeline, evidence, approvals, api, `src/main.ts`, tests except `test/adversarial/`) | backend | `security` reviews evidence, approvals and API auth |
 | `services/factory-engine/test/adversarial/**` | verification | |
@@ -51,7 +51,10 @@ Agent definitions: `.kiro/agents/*.md`. Rules for the team: `.kiro/steering/` (r
 | `packages/verification-harness/**`, `tests/harness-selftest/**` | verification | **Protected.** Nobody else writes |
 | `.github/**`, `.kiro/hooks/**` | devops | **Protected.** Verification workflow content is requested by handoff from `verification` |
 | `.kiro/settings/mcp.json` | architect | Added only after a recorded decision; devops reviews secrets handling |
-| Root config, lockfile, `infra/**`, `scripts/**` except those above | devops | |
+| Root config, lockfile, `infra/**` except `infra/deploy/**`, `scripts/**` except those above | devops | Person B |
+| `specs/**` (product specs that Lathe runs; not `.kiro/specs/`) | architect (spec author) | Person C writes; A approves each spec |
+| `infra/deploy/**`, `tests/e2e/deploy-smoke/**`, `tests/e2e/deployed/**` | devops (deploy), verification (black-box checks) | Person C. Checks never import harness code; they may run `lathe-verify` as a process. `security` and `architect` review, B consulted |
+| `docs/judge-guide.md` | documentation | Person C |
 | `SECURITY.md`, `docs/security/**` | security | |
 | `README.md`, `CONTRIBUTING.md`, `ROADMAP.md`, `IMPLEMENTATION_PLAN.md`, `TASKLIST.md` (status), `docs/architecture/**`, `docs/demo/**`, `docs/setup/**`, `docs/kiro-usage.md`, `docs/backlog/**`, `packages/application-foundation/README.md` | documentation | |
 | `docs/reports/**`, `docs/handoffs/**` | any role (own files only) | Name files with your role |
@@ -66,7 +69,7 @@ The rules live in one place: [.kiro/steering/agent-workflow.md](../../.kiro/stee
 
 ## 4b. Humans
 
-Two people drive the agent team: **A** (lead, architect) and **B** (fullstack). Tracks, human review policy, cadence and cut ladder: [two-person-plan.md](two-person-plan.md).
+Three people drive the agent team: **A** (lead, architect), **B** (fullstack) and **C** (release and platform readiness, Marouan Ben, added Nov 27). C owns `specs/**`, `infra/deploy/**`, `tests/e2e/**`, `docs/setup/**`, `docs/security/**`, `docs/demo/**`, `docs/kiro-usage.md`, `docs/judge-guide.md`, `README.md` from Nov 30, and status edits in `TASKLIST.md`. Status: Proposed. Tracks, human review policy, cadence and cut ladder: [two-person-plan.md](two-person-plan.md).
 
 ## 5. Known risks of this team design
 
