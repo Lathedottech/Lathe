@@ -93,6 +93,50 @@ export const INTEGRITY_FIXTURES: readonly IntegrityFixture[] = [
     diff: edit('apps/support-desk/src/kb/index.ts', [], ['// @ts-nocheck']),
   },
   {
+    name: 'static-reject-ts-expect-error',
+    check: 'static',
+    expect: 'fail',
+    rule: 'integrity.lint-disable',
+    diff: edit('apps/support-desk/src/kb/index.ts', [], ['// @ts-expect-error']),
+  },
+  // tsconfig weakening
+  ...(
+    [
+      ['strict-false', ['    "strict": true,'], ['    "strict": false,']],
+      ['strict-removed', ['    "strict": true,'], []],
+      ['no-implicit-any-false', [], ['    "noImplicitAny": false,']],
+      ['strict-null-checks-false', [], ['    "strictNullChecks":false']],
+      ['skip-lib-check', [], ['    "skipLibCheck": true,']],
+      ['include-narrowed', ['  "include": ["src"],'], ['  "include": ["src/none.ts"],']],
+      ['exclude-widened', [], ['  "exclude": ["src/kb"],']],
+      ['include-element-removed', ['    "src/kb",'], []],
+      ['unchecked-indexed-access-off', [], ['    "noUncheckedIndexedAccess": false']],
+    ] as const
+  ).map(([n, removed, added]): IntegrityFixture => ({
+    name: `static-reject-tsconfig-${n}`,
+    check: 'static',
+    expect: 'fail',
+    rule: 'integrity.tsconfig',
+    diff: edit('apps/support-desk/tsconfig.json', removed, added),
+  })),
+  {
+    name: 'static-reject-tsconfig-variant-file',
+    check: 'static',
+    expect: 'fail',
+    rule: 'integrity.tsconfig',
+    diff: edit('apps/support-desk/tsconfig.build.json', [], ['    "strict": false']),
+  },
+  {
+    name: 'static-allow-tsconfig-harmless-edit',
+    check: 'static',
+    expect: 'pass',
+    diff: edit(
+      'apps/support-desk/tsconfig.json',
+      ['    "target": "ES2022",'],
+      ['    "target": "ES2023",'],
+    ),
+  },
+  {
     name: 'static-reject-lint-script-weakened',
     check: 'static',
     expect: 'fail',
@@ -302,6 +346,99 @@ export const INTEGRITY_FIXTURES: readonly IntegrityFixture[] = [
     expect: 'fail',
     rule: 'integrity.fails',
     diff: edit(TEST, [], ["it['fails']('x', () => {});"]),
+  },
+  // Indirect `.fails` access (review of PR #22)
+  ...(
+    [
+      ['destructured', 'const { fails } = it; fails("x", () => {});'],
+      ['destructured-renamed', 'const { fails: f } = test; f("x", () => {});'],
+      ['destructured-multiline-keys', 'const { skipIf, fails, only } = test;'],
+      ['reflect-literal', "Reflect.get(it, 'fails')('x', () => {});"],
+      ['reflect-const', 'const k = "fails"; Reflect.get(it, k)("x", () => {});'],
+      ['computed-const', 'const k = "fails"; it[k]("x", () => {});'],
+      ['computed-template', 'it[`fa${"ils"}`]("x", () => {});'],
+      ['computed-on-describe', 'describe[name]("x", () => {});'],
+    ] as const
+  ).map(([n, line]): IntegrityFixture => ({
+    name: `tests-reject-indirect-fails-${n}`,
+    check: 'tests',
+    expect: 'fail',
+    rule: 'integrity.fails',
+    diff: edit(TEST, [], [line]),
+  })),
+  {
+    name: 'tests-reject-destructured-only',
+    check: 'tests',
+    expect: 'fail',
+    rule: 'integrity.focus',
+    diff: edit(TEST, [], ['const { only } = it; only("x", () => {});']),
+  },
+  {
+    name: 'tests-reject-destructured-skip',
+    check: 'tests',
+    expect: 'fail',
+    rule: 'integrity.skip',
+    diff: edit(TEST, [], ['const { skip, todo } = describe;']),
+  },
+  {
+    name: 'tests-allow-destructuring-skip-from-params',
+    check: 'tests',
+    expect: 'pass',
+    diff: edit(TEST, [], ['const { skip, take } = page;']),
+  },
+  // Deleted test definitions
+  {
+    name: 'tests-reject-removed-test-call',
+    check: 'tests',
+    expect: 'fail',
+    rule: 'integrity.removed-test',
+    diff: edit(TEST, ["it('lists articles', () => {});", "it('gets article', () => {});"], []),
+  },
+  {
+    name: 'tests-reject-removed-test-replaced-by-comment',
+    check: 'tests',
+    expect: 'fail',
+    rule: 'integrity.removed-test',
+    diff: edit(TEST, ["test('a', () => {});"], ['// removed']),
+  },
+  {
+    name: 'tests-reject-removed-each-test',
+    check: 'tests',
+    expect: 'fail',
+    rule: 'integrity.removed-test',
+    diff: edit(TEST, ["it.each([1, 2])('n %i', () => {});"], []),
+  },
+  {
+    name: 'tests-reject-test-file-deleted',
+    check: 'tests',
+    expect: 'fail',
+    rule: 'integrity.removed-test',
+    diff: String.raw`diff --git a/apps/support-desk/src/kb/article.test.ts b/apps/support-desk/src/kb/article.test.ts
+deleted file mode 100644
+index 1111111..0000000
+--- a/apps/support-desk/src/kb/article.test.ts
++++ /dev/null
+@@ -1,1 +0,0 @@
+-it('lists articles', () => {});
+`,
+  },
+  {
+    name: 'tests-allow-test-edited-in-place',
+    check: 'tests',
+    expect: 'pass',
+    diff: edit(TEST, ["it('a', () => {});"], ["it('a renamed', () => {});"]),
+  },
+  {
+    name: 'tests-allow-removed-regex-test-call',
+    check: 'tests',
+    expect: 'pass',
+    diff: edit(TEST, ['const ok = /x/.test(s);'], []),
+  },
+  {
+    name: 'tests-allow-removed-test-in-non-test-file',
+    check: 'tests',
+    expect: 'pass',
+    diff: edit('apps/support-desk/src/kb/index.ts', ['test(1);'], []),
   },
   {
     name: 'tests-allow-fails-as-a-word',

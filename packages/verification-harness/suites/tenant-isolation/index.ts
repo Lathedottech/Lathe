@@ -14,6 +14,8 @@ export interface IsolationTarget {
   readonly baseUrl: string;
   readonly password: string;
   readonly runId: string;
+  /** Org a and org b ids from the seed, a trusted source. Without them the gate fails. */
+  readonly orgIds?: { readonly a: string; readonly b: string };
 }
 
 /**

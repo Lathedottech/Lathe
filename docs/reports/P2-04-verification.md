@@ -53,3 +53,9 @@ None blocking. A future real run depends on P1-06 apps exposing the conventions 
 
 ## 8. Recommended next task
 P2-05 (RBAC matrix and deny-by-default suite), and a handoff to `architect` on the request-shape conventions before the first real app is wired.
+
+## Fix after review of PR #22 (second round)
+- **Vacuous `isolation/org-from-input`:** the suite took org a's id from the create response, so an app that did not return `org_id` made the forged request carry a made-up id and nothing could be detected. Org ids now come from `orgIds` (the fixture seed, `FixtureServer.orgIds`), never from a response. Without `orgIds` the suite emits `isolation/org-id-unknown` and the gate fails. Before the fix, the leaky `org-from-input` app with `org_id` stripped from all responses produced no finding (test failed on old code); after, it produces `isolation/org-from-input`. The good app with `org_id` stripped still passes.
+- **`idField`:** the create response id is read from the create action's `idField` (default `id`). Fixture app option `idField: 'noteId'`: before the fix the good app got a false `isolation/create-failed`; after, it passes and `missing-org-filter` is caught as `isolation/cross-read`. A response without the declared field still gives `isolation/create-failed` (fail closed).
+- `IsolationTarget` gained an optional `orgIds`. The app launcher (P2-08) must supply it from its seed.
+- Tests: `suites/tenant-isolation` 3 new failing tests before the fix, all pass after. Root: `pnpm test` 42 files, 687 passed, 5 skipped, exit 0; `pnpm typecheck` 0; `pnpm lint` 0.

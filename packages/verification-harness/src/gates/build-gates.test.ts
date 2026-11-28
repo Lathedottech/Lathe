@@ -237,6 +237,29 @@ describe('static and tests gates', () => {
         await rm(join(root, 'apps', 'support-desk', 'src'), { recursive: true, force: true });
       }
     });
+    it.each([
+      ['destructured', 'const { fails } = it;\nfails("x", () => {});\n'],
+      ['destructured-renamed', 'const { fails: f } = test;\nf("x", () => {});\n'],
+      ['destructured-multiline', 'const {\n  skipIf,\n  fails,\n} = test;\n'],
+      ['reflect-literal', "Reflect.get(it, 'fails')('x', () => {});\n"],
+      ['reflect-const', "const k = 'fails';\nReflect.get(it, k)('x', () => {});\n"],
+      ['computed-const', "const k = 'fails';\nit[k]('x', () => {});\n"],
+    ])(
+      'fails an indirect .fails in the patched tree even when the diff is clean (%s)',
+      async (_n, source) => {
+        await mkdir(join(root, 'apps', 'support-desk', 'src'), { recursive: true });
+        await writeFile(join(root, 'apps', 'support-desk', 'src', 'old.test.ts'), source);
+        try {
+          const f = fake({ report: report(3) });
+          const r = await gate(f).run(ctx(CLEAN));
+          expect(r.status).toBe('failed');
+          expect(r.findings.map((x) => x.ruleId)).toContain('integrity.fails');
+          expect(f.calls).toEqual([]);
+        } finally {
+          await rm(join(root, 'apps', 'support-desk', 'src'), { recursive: true, force: true });
+        }
+      },
+    );
     it('ignores .fails in node_modules and passes a tree without it', async () => {
       const nm = join(root, 'apps', 'support-desk', 'node_modules', 'dep');
       await mkdir(nm, { recursive: true });

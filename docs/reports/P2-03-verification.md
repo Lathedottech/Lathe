@@ -59,3 +59,12 @@ P2-04 tenant isolation suite, then a follow-up for the config-loosening gap abov
 - **Rejected alternative:** diff scan only. It misses a `.fails` already in the tree.
 - **Regression:** 6 reject fixtures, 1 allow fixture (`failsafe`) and 2 gate tests. Before the fix: 7 failed, 54 passed in `build-gates.test.ts` (6 fixtures + tree test). After: all pass.
 - **Results (worktree root):** `pnpm typecheck` 0, `pnpm lint` 0, `pnpm test` 17 files / 205 tests passed, `prettier --check packages docs` 0.
+
+## Fix after review of PR #22 (second round)
+Each item got fixtures and tests first. Baseline on the unfixed code: `build-gates.test.ts` 31 failed, 66 passed (25 new fixtures plus 6 tree-scan cases not caught). After: 97 passed.
+1. **Indirect `.fails`/`.only`/`.skip`:** `findIndirectTestApi` rejects destructuring of `fails` (any source) and of `only|skip|todo|skipIf|runIf` from `it|test|describe|suite|bench`, `Reflect.*`/`Object.*` calls on those names, and any computed member access on them (fail closed, so `it[k]` with `const k = 'fails'` is caught without tracking the constant). It runs on the added lines of the diff and on the whole text of the patched test sources (multi-line destructuring included). Accepted over-match: `it[...]` and `Reflect.get(it, ...)` are rejected even when harmless; `const { skip, take } = page` is allowed.
+2. **`@ts-expect-error`** added to the lint-disable rule.
+3. **Deleted tests:** new rule `integrity.removed-test`. In test files, a diff that removes more `it(`/`test(` definitions than it adds, or deletes a test file, fails. Test-count floor in the run still applies. No base count is available to the gate, so the diff rule is the control. Accepted: merging two tests into one is flagged and needs a human.
+4. **tsconfig weakening:** new rule `integrity.tsconfig` for `tsconfig*.json`/`jsconfig*.json`: a strict flag set to false (or a `true` flag removed), any edit of `skipLibCheck`, `include`, `exclude`, `files`, `extends`, `references`, `allowJs`, `checkJs`, `noEmit`, any bare string array element line, and delete or rename of the file.
+5. **Pre-existing break from the main merge:** the fixture's `passwordEnv` (`LATHE_FIXTURE_PASSWORD`) no longer matched C1 (`LATHE_TEST_*PASSWORD`), so the tenant-isolation tests could not load. Renamed to `LATHE_TEST_FIXTURE_PASSWORD`.
+Results (worktree root): `pnpm typecheck` 0, `pnpm lint` 0, `pnpm test` 42 files, 687 passed, 5 skipped, exit 0.
