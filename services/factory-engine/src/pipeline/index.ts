@@ -39,6 +39,19 @@ export {
   type VerifyStepResult,
 } from './verify.js';
 export {
+  buildRepairPrompt,
+  failureFingerprint,
+  latestFailingGates,
+  runRepairLoop,
+  runRepairStep,
+  type FailingGate,
+  type RepairFailureReason,
+  type RepairLoopDeps,
+  type RepairLoopResult,
+  type RepairStepDeps,
+  type RepairStepResult,
+} from './repair.js';
+export {
   PLAN_MAX_ATTEMPTS,
   buildPlannerPrompt,
   extractJsonObjects,
