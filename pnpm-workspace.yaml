@@ -3,6 +3,7 @@ packages:
   - packages/verification-harness
   - packages/shared-contracts
   - services/factory-engine
+  - integrations/github
   # Every app, including the ones `pnpm new-app` generates, and the template they come from.
   - apps/*
   - templates/*

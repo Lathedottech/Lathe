@@ -7,6 +7,7 @@ export default defineConfig({
       'packages/verification-harness',
       'packages/shared-contracts',
       'services/factory-engine',
+      'integrations/github',
       // Every app has its own vitest.config.ts, including apps from `pnpm new-app`.
       'apps/*',
       'templates/*',
