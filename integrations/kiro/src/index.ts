@@ -11,6 +11,36 @@ export {
   type PermissionPolicy,
 } from './permission-policy.js';
 export {
+  ALLOWED_ENV_NAMES,
+  buildSandboxRunArgs,
+  type SandboxRunContext,
+} from './sandbox/docker-args.js';
+export {
+  assertNoGitMetadata,
+  createSafeGitContext,
+  runSafeGit,
+  safeGitPrefix,
+  type SafeGitContext,
+} from './sandbox/git-safe.js';
+export {
+  DockerSandboxRunner,
+  assertSafeBindSource,
+  createDockerSpawn,
+  nodeCommandRunner,
+  pickDockerEnv,
+  type CommandResult,
+  type CommandRunner,
+  type DockerSandboxOptions,
+} from './sandbox/docker-sandbox.js';
+export {
+  KIRO_EGRESS_HOSTS,
+  buildProxyFilter,
+  buildProxyRunArgs,
+  buildNetworkCreateArgs,
+  isHostAllowed,
+} from './sandbox/egress-proxy.js';
+export { SandboxError, type SandboxErrorCode } from './sandbox/errors.js';
+export {
   hostSpawn,
   type AcpProcess,
   type ExitInfo,
