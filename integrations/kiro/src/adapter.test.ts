@@ -7,7 +7,7 @@ import {
 } from '@lathe/shared-contracts';
 import { AcpKiroAdapter, type AcpAdapterOptions } from './adapter.js';
 import { KiroAdapterError, KiroTimeoutError } from './errors.js';
-import type { SpawnContext } from './process.js';
+import { markSandboxSpawn, type SpawnContext } from './process.js';
 import { FakeAcpServer, type FakeScript } from './testing/fake-acp-server.js';
 
 const sandbox = {
@@ -355,14 +355,54 @@ describe('permission requests', () => {
     await session.close();
   });
 
-  it('allows commands only when the policy says so', async () => {
+  it('refuses allowCommands without a sandboxed spawn', async () => {
+    const plain = new FakeAcpServer().asSpawn();
+    expect(() => new AcpKiroAdapter({ spawn: plain, allowCommands: true })).toThrow(
+      /sandboxed spawn/,
+    );
+    expect(() => new AcpKiroAdapter({ allowCommands: true })).toThrow(/sandboxed spawn/);
+    const adapter = new AcpKiroAdapter({ spawn: plain });
+    const over = {
+      permissionPolicy: { allowWritesUnder: ['/workspace/app'], allowCommands: true },
+    };
+    await expect(adapter.start(request(over), sandbox)).rejects.toMatchObject({
+      code: 'invalid_request',
+    });
+  });
+  it('allows commands only with a sandboxed spawn, the policy flag and an allowed command', async () => {
+    const server = new FakeAcpServer({
+      promptSteps: [
+        {
+          do: 'permission',
+          toolCall: { toolCallId: 'c', kind: 'execute', rawInput: { command: 'pnpm test' } },
+        },
+        {
+          do: 'permission',
+          toolCall: { toolCallId: 'd', kind: 'execute', rawInput: { command: 'cat /etc/passwd' } },
+        },
+      ],
+    });
+    const adapter = new AcpKiroAdapter({
+      spawn: markSandboxSpawn(server.asSpawn()),
+      allowCommands: true,
+    });
+    const over = {
+      permissionPolicy: { allowWritesUnder: ['/workspace/app'], allowCommands: true },
+    };
+    const session = await adapter.start(request(over), sandbox);
+    await session.prompt('go');
+    expect(reply(server, 0)).toEqual({ outcome: 'selected', optionId: 'allow_once' });
+    expect(reply(server, 1)).not.toEqual({ outcome: 'selected', optionId: 'allow_once' });
+    await session.close();
+  });
+  it('rejects execute under allowCommands without a command', async () => {
     const { server, session } = await open(
       { promptSteps: [{ do: 'permission', toolCall: { toolCallId: 'c', kind: 'execute' } }] },
       {},
-      { permissionPolicy: { allowWritesUnder: ['/workspace/app'], allowCommands: true } },
+      { permissionPolicy: { allowWritesUnder: ['/workspace/app'], allowCommands: false } },
     );
     await session.prompt('go');
-    expect(reply(server, 0)).toEqual({ outcome: 'selected', optionId: 'allow_once' });
+    expect(reply(server, 0)).not.toEqual({ outcome: 'selected', optionId: 'allow_once' });
     await session.close();
   });
 

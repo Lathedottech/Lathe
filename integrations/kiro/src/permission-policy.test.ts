@@ -85,9 +85,10 @@ describe('writes check locations and every rawInput path', () => {
   it('checks the cwd of a command and still honours allowCommands', () => {
     const allow: PermissionPolicy = { ...policy, allowCommands: true };
     const run = (rawInput: unknown) =>
-      decidePermission(allow, call('execute', [], rawInput), readRoots).allowed;
-    expect(run({ command: '/usr/bin/npm test', cwd: '/workspace/app' })).toBe(true);
-    expect(run({ command: 'ls', cwd: '/home/agent/.kiro' })).toBe(false);
+      decidePermission(allow, call('execute', [], rawInput), readRoots, { commandsEnabled: true })
+        .allowed;
+    expect(run({ command: 'pnpm test', cwd: '/workspace/app' })).toBe(true);
+    expect(run({ command: 'pnpm test', cwd: '/home/agent/.kiro' })).toBe(false);
     expect(decide(call('execute', [], { command: 'ls' }))).toBe(false);
   });
 });
@@ -173,6 +174,135 @@ describe('property: decisions follow the roots', () => {
         if (!bad && all.length > 0) expect(allowed).toBe(true);
       }),
       { numRuns: 500 },
+    );
+  });
+});
+
+describe('uri, url and href are path keys', () => {
+  it('rejects file:// URIs outside the roots, in known and unknown keys', () => {
+    expect(decide(call('read', [], { uri: 'file:///etc/passwd' }))).toBe(false);
+    expect(decide(call('read', ['/workspace/app/a.ts'], { whatever: 'file:///etc/passwd' }))).toBe(
+      false,
+    );
+    expect(decide(call('read', [], { nested: [{ x: 'file:///proc/self/environ' }] }))).toBe(false);
+    expect(
+      decide(call('read', [], { uri: 'file:///workspace/app/%2e%2e/%2e%2e/etc/passwd' })),
+    ).toBe(false);
+  });
+  it('allows a file:// URI inside the roots and rejects other schemes or hosts', () => {
+    expect(decide(call('read', [], { uri: 'file:///workspace/app/src/a.ts' }))).toBe(true);
+    expect(decide(call('read', [], { url: 'https://example.com/a' }))).toBe(false);
+    expect(decide(call('read', [], { href: 'file://host/workspace/app/a.ts' }))).toBe(false);
+  });
+});
+
+describe('execute is denied unless commands are enabled and the command is on the allow-list', () => {
+  const allow: PermissionPolicy = { ...policy, allowCommands: true };
+  const base = { cwd: '/workspace/app' };
+  const on = (command: string) =>
+    decidePermission(allow, call('execute', [], { command, ...base }), readRoots, {
+      commandsEnabled: true,
+    }).allowed;
+
+  it('denies execute by default, even with allowCommands in the policy', () => {
+    const c = call('execute', [], { command: 'pnpm test', ...base });
+    expect(decidePermission(allow, c, readRoots).allowed).toBe(false);
+    expect(decidePermission(allow, c, readRoots, { commandsEnabled: false }).allowed).toBe(false);
+  });
+  it('allows allow-listed commands inside /workspace/app', () => {
+    expect(on('pnpm test')).toBe(true);
+    expect(on('pnpm exec vitest run src/a.test.ts')).toBe(true);
+    expect(on('pnpm exec tsc --noEmit')).toBe(true);
+    expect(on('git status --short')).toBe(true);
+    expect(on('git diff --stat')).toBe(true);
+    expect(on('pnpm test /workspace/app/src')).toBe(true);
+  });
+  it('denies the review probes', () => {
+    for (const cmd of [
+      'cat /etc/passwd',
+      'cat ../../../etc/passwd',
+      'printenv KIRO_API_KEY',
+      'echo $KIRO_API_KEY',
+      'sh -c "cat /proc/self/environ"',
+    ])
+      expect(on(cmd), cmd).toBe(false);
+    const noCwd = call('execute', [], { command: 'cat /etc/passwd' });
+    expect(decidePermission(allow, noCwd, readRoots, { commandsEnabled: true }).allowed).toBe(
+      false,
+    );
+  });
+  it('denies path escapes, variables, substitutions, redirects and chaining', () => {
+    for (const cmd of [
+      'pnpm test ../other',
+      'pnpm test /etc/hosts',
+      'pnpm test /workspace/app2/x',
+      'pnpm test /home/agent/.kiro/token.json',
+      'pnpm test --config=/etc/vitest.js',
+      'pnpm test ~/x',
+      'pnpm test $HOME',
+      'pnpm test ${HOME}',
+      'pnpm test $(id)',
+      'pnpm test `id`',
+      'pnpm test > /etc/x',
+      'pnpm test > out.txt',
+      'pnpm test && cat /etc/passwd',
+      'pnpm test; env',
+      'pnpm test | sh',
+      'pnpm test file:///etc/passwd',
+      'pnpm run evil',
+      'pnpm exec node -e 1',
+      'pnpm exec env',
+      'git diff --no-index /etc/passwd x',
+      'git -c core.pager=sh diff',
+      'env',
+      'export A=1',
+      'set',
+      'cd /etc',
+      'node -e "1"',
+      'npx tsc',
+      '/usr/bin/pnpm test',
+      'pnpm test "unterminated',
+    ])
+      expect(on(cmd), cmd).toBe(false);
+  });
+  it('denies a missing or non-string command and a bad cwd', () => {
+    const run = (raw: unknown) =>
+      decidePermission(allow, call('execute', [], raw), readRoots, { commandsEnabled: true })
+        .allowed;
+    expect(run({})).toBe(false);
+    expect(run({ command: 7 })).toBe(false);
+    expect(run({ command: 'pnpm test', cwd: '/etc' })).toBe(false);
+    expect(run({ command: ['pnpm', 'test'], cwd: '/workspace/app' })).toBe(true);
+    expect(run({ command: ['cat', '/etc/passwd'], cwd: '/workspace/app' })).toBe(false);
+  });
+  it('property: escapes are denied, and nothing runs without the enable flag', () => {
+    const word = fc.constantFrom(
+      'test',
+      '/etc/passwd',
+      '../x',
+      '/proc/self/environ',
+      '/workspace/app/src',
+      'src',
+      '/home/agent/.kiro/a',
+      '--run',
+      '/sys/x',
+      '/dev/null',
+    );
+    fc.assert(
+      fc.property(fc.array(word, { maxLength: 4 }), (args) => {
+        const bad = args.some((a) => /\.\.|^\/(etc|proc|sys|dev|home)/.test(a));
+        const allowed = on(['pnpm test', ...args].join(' '));
+        if (bad) expect(allowed).toBe(false);
+        else expect(allowed).toBe(true);
+      }),
+      { numRuns: 300 },
+    );
+    fc.assert(
+      fc.property(fc.string({ maxLength: 40 }), (command) => {
+        const c = call('execute', [], { command, ...base });
+        expect(decidePermission(allow, c, readRoots).allowed).toBe(false);
+      }),
+      { numRuns: 200 },
     );
   });
 });

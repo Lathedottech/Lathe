@@ -29,11 +29,22 @@ import {
 } from './acp-schemas.js';
 import { KiroAdapterError, KiroTimeoutError, type TimeoutPhase } from './errors.js';
 import { decidePermission, type PermissionPolicy } from './permission-policy.js';
-import { hostSpawn, type AcpProcess, type ExitInfo, type SpawnFn } from './process.js';
+import {
+  hostSpawn,
+  isSandboxSpawn,
+  type AcpProcess,
+  type ExitInfo,
+  type SpawnFn,
+} from './process.js';
 
 export interface AcpAdapterOptions {
   /** Starts the ACP process. Defaults to `hostSpawn` (smoke script only). */
   spawn?: SpawnFn;
+  /**
+   * Lets sessions run commands (`allowCommands` in the permission policy). Accepted only
+   * with a sandboxed spawn (createDockerSpawn); otherwise the constructor throws.
+   */
+  allowCommands?: boolean;
   command?: string;
   args?: readonly string[];
   /** Names of host variables the child may inherit. Empty by default. */
@@ -130,6 +141,7 @@ class AcpSession implements KiroSession {
     private readonly request: SessionRequest,
     private readonly cfg: typeof DEFAULTS & { now: () => Date },
     private readonly readRoots: readonly string[],
+    private readonly commandsEnabled: boolean,
   ) {
     this.exitedPromise = new Promise<void>((resolve) => {
       proc.onExit((info) => {
@@ -496,7 +508,9 @@ class AcpSession implements KiroSession {
     }
     const { toolCall, options } = p.data;
     const policy: PermissionPolicy | undefined = this.request.permissionPolicy;
-    let decision = decidePermission(policy, toolCall, this.readRoots);
+    let decision = decidePermission(policy, toolCall, this.readRoots, {
+      commandsEnabled: this.commandsEnabled,
+    });
     const allowOption = options.find((o) => o.kind === 'allow_once');
     if (decision.allowed && !allowOption)
       decision = { allowed: false, reason: 'no allow_once option offered' };
@@ -616,12 +630,19 @@ function readRootsOf(sandbox: SandboxHandle): string[] {
 
 export class AcpKiroAdapter implements KiroAdapter {
   private readonly spawn: SpawnFn;
+  private readonly commandsEnabled: boolean;
   private readonly cfg: typeof DEFAULTS & { now: () => Date };
   private readonly envAllowlist: readonly string[];
   private readonly hostEnv: Readonly<Record<string, string | undefined>>;
 
   constructor(options: AcpAdapterOptions = {}) {
     this.spawn = options.spawn ?? hostSpawn;
+    this.commandsEnabled = options.allowCommands === true;
+    if (this.commandsEnabled && !isSandboxSpawn(this.spawn))
+      throw new KiroAdapterError(
+        'invalid_request',
+        'allowCommands needs a sandboxed spawn (createDockerSpawn)',
+      );
     for (const name of options.envAllowlist ?? []) {
       if (!SecretEnvName.safeParse(name).success)
         throw new KiroAdapterError(
@@ -649,6 +670,11 @@ export class AcpKiroAdapter implements KiroAdapter {
         cause: parsed.error,
       });
     const request = parsed.data;
+    if (request.permissionPolicy?.allowCommands && !this.commandsEnabled)
+      throw new KiroAdapterError(
+        'invalid_request',
+        'allowCommands requires an adapter built with allowCommands and a sandboxed spawn',
+      );
 
     const env: Record<string, string> = {};
     // A secret enters the child only when the sandbox spec declares it (C2 secretEnv).
@@ -674,7 +700,13 @@ export class AcpKiroAdapter implements KiroAdapter {
       });
     }
 
-    const session = new AcpSession(proc, request, this.cfg, readRootsOf(sandbox));
+    const session = new AcpSession(
+      proc,
+      request,
+      this.cfg,
+      readRootsOf(sandbox),
+      this.commandsEnabled,
+    );
     try {
       await session.handshake();
     } catch (e) {

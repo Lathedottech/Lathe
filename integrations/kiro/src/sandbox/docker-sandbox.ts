@@ -11,7 +11,7 @@ import {
   type SandboxRunner,
   type SecretEnvName,
 } from '@lathe/shared-contracts';
-import { hostSpawn, type SpawnFn } from '../process.js';
+import { hostSpawn, markSandboxSpawn, type SpawnFn } from '../process.js';
 import { buildSandboxRunArgs } from './docker-args.js';
 import { KIRO_EGRESS_HOSTS, buildNetworkCreateArgs, buildProxyRunArgs } from './egress-proxy.js';
 import type { CommandResult, CommandRunner } from './command.js';
@@ -286,7 +286,7 @@ export function createDockerSpawn(
   dockerEnv: Readonly<Record<string, string>>,
   inner: SpawnFn = hostSpawn,
 ): SpawnFn {
-  return ({ command, args, sandbox, request }) => {
+  return markSandboxSpawn(({ command, args, sandbox, request }) => {
     if (!sandbox.id.startsWith(SANDBOX_NAME_PREFIX) || !/^[a-z0-9-]+$/.test(sandbox.id))
       throw new SandboxError('invalid_name', 'sandbox id is not a Lathe container name');
     return inner({
@@ -296,5 +296,5 @@ export function createDockerSpawn(
       sandbox,
       request,
     });
-  };
+  });
 }
