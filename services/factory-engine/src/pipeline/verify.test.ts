@@ -88,15 +88,17 @@ function report(failAt?: number, over: Partial<VerificationReport> = {}): Verifi
     ...over,
   } as VerificationReport;
 }
-const out = (r: unknown, exitCode: number): VerifyExecResult => ({
+type Exec = VerifyExecResult & { reportFile?: string | null };
+const out = (r: unknown, exitCode: number): Exec => ({
   exitCode,
-  stdout: JSON.stringify(r),
+  stdout: '',
   stderr: '',
   timedOut: false,
+  reportFile: typeof r === 'string' ? r : JSON.stringify(r),
 });
 
 function setup(opts: {
-  exec: () => VerifyExecResult | Promise<VerifyExecResult>;
+  exec: () => Exec | Promise<Exec>;
   alive?: string[];
   attempts?: number;
   patch?: Patch;
@@ -110,6 +112,8 @@ function setup(opts: {
   const destroyed: string[] = [];
   const execs: string[][] = [];
   const events: string[] = [];
+  const reads: string[] = [];
+  let reportText: string | null = null;
   const deps: VerifyStepDeps = {
     runs,
     evidence,
@@ -136,14 +140,20 @@ function setup(opts: {
             opts.postgresFails ? Promise.reject(new Error('pg')) : Promise.resolve(),
           exec: async (argv) => {
             execs.push([...argv]);
-            return opts.exec();
+            const { reportFile, ...rest } = await opts.exec();
+            reportText = reportFile ?? null;
+            return rest;
+          },
+          readFile: (path) => {
+            reads.push(path);
+            return Promise.resolve(reportText);
           },
         };
         return Promise.resolve(handle);
       },
     },
   };
-  return { runs, evidence, deps, contexts, destroyed, execs };
+  return { runs, evidence, deps, contexts, destroyed, execs, reads };
 }
 const stateOf = async (runs: MemoryRunStore) =>
   (await runs.listNonTerminal()).find((r) => r.runId === RUN)?.state;
@@ -162,12 +172,17 @@ describe('runVerifyStep', () => {
     expect(await stateOf(t.runs)).toBe('AWAITING_APPROVAL');
     expect(t.execs[0]).toEqual([
       'lathe-verify',
-      '--app',
       'support-desk',
+      '--worktree',
+      '/workspace',
+      '--commit',
+      BASE,
+      '--report',
+      '/tmp/lathe-verify-report.json',
       '--patch',
       '/tmp/lathe-agent.patch',
-      '--json',
     ]);
+    expect(t.reads).toEqual(['/tmp/lathe-verify-report.json']);
     expect(t.destroyed).toEqual(['v0']);
     const entries = await t.evidence.list(RUN);
     expect(entries.filter((e) => e.kind === 'verify_gate')).toHaveLength(GATE_ORDER.length);
@@ -221,9 +236,27 @@ describe('runVerifyStep', () => {
     expect(await runVerifyStep(t.deps, RUN)).toMatchObject({ outcome: 'error' });
   });
 
-  it('exit 0 with garbage stdout is an error', async () => {
+  it('exit 0 with a garbage report file is an error', async () => {
+    const t = setup({ exec: () => out('ALL GATES PASSED', 0) });
+    expect(await runVerifyStep(t.deps, RUN)).toMatchObject({ outcome: 'error' });
+    expect(await stateOf(t.runs)).toBeUndefined();
+  });
+  it('missing report file is an error', async () => {
     const t = setup({
-      exec: () => ({ exitCode: 0, stdout: 'ALL GATES PASSED', stderr: '', timedOut: false }),
+      exec: () => ({ exitCode: 0, stdout: '', stderr: '', timedOut: false, reportFile: null }),
+    });
+    expect(await runVerifyStep(t.deps, RUN)).toMatchObject({ outcome: 'error' });
+    expect(await stateOf(t.runs)).toBeUndefined();
+  });
+  it('a valid report on stdout only (no report file) is an error', async () => {
+    const t = setup({
+      exec: () => ({
+        exitCode: 0,
+        stdout: JSON.stringify(report()),
+        stderr: '',
+        timedOut: false,
+        reportFile: null,
+      }),
     });
     expect(await runVerifyStep(t.deps, RUN)).toMatchObject({ outcome: 'error' });
     expect(await stateOf(t.runs)).toBeUndefined();

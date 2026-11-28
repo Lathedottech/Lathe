@@ -3,6 +3,7 @@ import {
   SandboxSpec,
   VERIFY_EXIT_CODES,
   VerificationReport,
+  VerifyRequest,
   type OverallStatus,
   type SandboxCreateInput,
   type SandboxHandle,
@@ -43,6 +44,8 @@ export interface VerifierHandle extends SandboxHandle {
   /** Starts the ephemeral Postgres for this verifier. The provider wires its URL into the container. */
   startEphemeralPostgres(): Promise<void>;
   exec(argv: readonly string[], options: { readonly timeoutMs: number }): Promise<VerifyExecResult>;
+  /** Reads a file inside the verifier container. Resolves null when it does not exist. */
+  readFile(path: string): Promise<string | null>;
 }
 
 export interface VerifierSandboxContext extends SandboxCreateInput {
@@ -91,6 +94,10 @@ export type VerifyStepResult =
   | { readonly outcome: 'refused'; readonly reason: VerifyRefusalReason };
 
 export const VERIFY_PATCH_FILE = '/tmp/lathe-agent.patch';
+/** Clean tree (base commit plus agent patch) inside the verifier. */
+export const VERIFY_WORKTREE = '/workspace';
+/** Where lathe-verify --report writes the C3 JSON report, inside the verifier tmp. */
+export const VERIFY_REPORT_FILE = '/tmp/lathe-verify-report.json';
 const MAX_FINDINGS_IN_EVIDENCE = 50;
 const MAX_STDERR_IN_EVIDENCE = 2_000;
 
@@ -147,18 +154,40 @@ const STATUS_BY_EXIT: Readonly<Record<number, OverallStatus>> = {
   [VERIFY_EXIT_CODES.error]: 'error',
 };
 
+/** lathe-verify <app> --worktree <dir> --commit <sha> --report <file> --patch <file> [--fault <name>] (C3). */
+export function verifyArgv(request: VerifyRequest, patchFile: string): string[] {
+  return [
+    'lathe-verify',
+    request.app,
+    '--worktree',
+    request.worktree,
+    '--commit',
+    request.commit,
+    '--report',
+    VERIFY_REPORT_FILE,
+    '--patch',
+    patchFile,
+    ...(request.faultInjection ? ['--fault', request.faultInjection.name] : []),
+  ];
+}
+
 /** Only a well-formed report whose status agrees with the exit code and inputs counts. */
-function judge(result: VerifyExecResult, expected: { app: string; commit: string }): Judged {
+function judge(
+  result: VerifyExecResult,
+  reportText: string | null,
+  expected: { app: string; commit: string },
+): Judged {
   if (result.timedOut) return { ok: false, detail: 'lathe-verify timed out' };
   if (result.exitCode === null) return { ok: false, detail: 'lathe-verify did not exit normally' };
   const byExit = STATUS_BY_EXIT[result.exitCode];
   if (byExit === undefined)
     return { ok: false, detail: `unexpected exit code ${String(result.exitCode)}` };
+  if (reportText === null) return { ok: false, detail: 'report file is missing' };
   let json: unknown;
   try {
-    json = JSON.parse(result.stdout);
+    json = JSON.parse(reportText);
   } catch {
-    return { ok: false, detail: 'stdout is not JSON' };
+    return { ok: false, detail: 'report file is not JSON' };
   }
   const parsed = VerificationReport.safeParse(json);
   if (!parsed.success) return { ok: false, detail: 'report failed schema validation' };
@@ -228,8 +257,16 @@ export async function runVerifyStep(
   // Defense in depth: P5-02 already rejects these. A patch reaching here with one is an error.
   if (!checkPatchPaths(patch.data, spec).ok) return error('stored patch touches forbidden paths');
 
+  // Shape tied to C3: VerifyRequest is the input, the flags mirror it.
+  const request = VerifyRequest.parse({
+    app: spec.targetApp,
+    worktree: VERIFY_WORKTREE,
+    commit: deps.baseCommit,
+    faultInjection: null, // P5-05 injection point
+  });
   let sandbox: VerifierHandle | undefined;
   let result: VerifyExecResult;
+  let reportText: string | null;
   try {
     sandbox = await deps.sandboxes.create(verifierSandboxSpec(deps.sandboxConfig), {
       targetApp: spec.targetApp,
@@ -240,17 +277,21 @@ export async function runVerifyStep(
       patchFile: VERIFY_PATCH_FILE,
     });
     await sandbox.startEphemeralPostgres();
-    result = await sandbox.exec(
-      ['lathe-verify', '--app', spec.targetApp, '--patch', VERIFY_PATCH_FILE, '--json'],
-      { timeoutMs: deps.timeoutMs },
-    );
+    result = await sandbox.exec(verifyArgv(request, VERIFY_PATCH_FILE), {
+      timeoutMs: deps.timeoutMs,
+    });
+    // Only read the report if the process exited normally; judge() rejects the rest.
+    reportText =
+      result.timedOut || result.exitCode === null
+        ? null
+        : await sandbox.readFile(VERIFY_REPORT_FILE);
   } catch (cause) {
     return error(`verifier failed: ${cause instanceof Error ? cause.name : 'unknown error'}`);
   } finally {
     if (sandbox) await sandbox.destroy().catch(() => undefined);
   }
 
-  const judged = judge(result, { app: spec.targetApp, commit: deps.baseCommit });
+  const judged = judge(result, reportText, { app: spec.targetApp, commit: deps.baseCommit });
   if (!judged.ok) {
     if (result.stderr)
       await deps.evidence.append(runId, 'verify_stderr', {

@@ -22,6 +22,9 @@ export {
 } from './build.js';
 export {
   VERIFY_PATCH_FILE,
+  VERIFY_REPORT_FILE,
+  VERIFY_WORKTREE,
+  verifyArgv,
   bindingHash,
   runVerifyStep,
   verifierSandboxSpec,
