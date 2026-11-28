@@ -110,9 +110,10 @@ class Client {
 
 const is2xx = (r: Reply): boolean => r.status >= 200 && r.status < 300;
 const fill = (path: string, id: string): string => path.replace(/:[A-Za-z0-9_]+/g, id);
-const idOf = (json: unknown): string | undefined => {
+/** Reads the row id from the response field the contract declares (idField, default id). */
+const idOf = (json: unknown, idField: string): string | undefined => {
   if (typeof json !== 'object' || json === null) return undefined;
-  const v = (json as Record<string, unknown>)['id'];
+  const v = (json as Record<string, unknown>)[idField];
   return typeof v === 'string' ? v : undefined;
 };
 
@@ -248,7 +249,7 @@ export async function runProperties(opts: PropertiesOptions): Promise<Properties
           );
 
         if (action.kind === 'create' && is2xx(reply)) {
-          const id = idOf(reply.json);
+          const id = idOf(reply.json, action.idField ?? 'id');
           if (id !== undefined) {
             const owners = idOwners.get(id) ?? new Set<string>();
             owners.add(principal.org);
@@ -260,6 +261,14 @@ export async function runProperties(opts: PropertiesOptions): Promise<Properties
   );
 
   const details = await fc.check(property, { seed, numRuns });
+
+  // Fail closed: with no created id the id-ownership checks never ran, so a pass would be vacuous.
+  if (!details.failed && idOwners.size === 0)
+    fail(
+      'properties/no-ids',
+      'no create action returned a row id under its idField, so the id-ownership checks did not run',
+      'critical',
+    );
 
   let path: string | null = null;
   let counterexample: string | null = null;

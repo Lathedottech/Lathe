@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   propertiesFixtureContract,
+  propertiesFixtureContractWithIdField,
   startPropertiesFixtureApp,
   type PropertiesFixtureServer,
   type PropertiesVariant,
@@ -101,6 +102,63 @@ describe('property suite', () => {
 
   it('does not use a different default seed for the same inputs', async () => {
     expect((await run('good')).seed).toBe((await run('good')).seed);
+  });
+
+  describe('contract idField', () => {
+    async function runWithId(
+      variant: PropertiesVariant,
+      serverField: string,
+      contractField: string,
+    ) {
+      server = await startPropertiesFixtureApp(variant, { idField: serverField });
+      const r = await runProperties({
+        contract: propertiesFixtureContractWithIdField(contractField),
+        baseUrl: server.baseUrl,
+        password: server.password,
+        runId: 'test',
+        numRuns: 50,
+      });
+      await server.close();
+      server = undefined;
+      return r;
+    }
+
+    it.each(['leaky-by-id', 'collision', 'missing-rls-policy'] as const)(
+      'still catches %s when the id is named noteId',
+      async (variant) => {
+        const r = await runWithId(variant, 'noteId', 'noteId');
+        expect(r.findings.length).toBeGreaterThan(0);
+        expect(rules(r)).not.toContain('properties/no-ids');
+      },
+    );
+
+    it('passes the good app with a noteId idField', async () => {
+      expect((await runWithId('good', 'noteId', 'noteId')).findings).toEqual([]);
+    });
+
+    it.each(['good', 'leaky-by-id', 'collision', 'missing-rls-policy'] as const)(
+      'fails closed with properties/no-ids when %s returns no id under the declared field',
+      async (variant) => {
+        const r = await runWithId(variant, 'noteId', 'id');
+        expect(rules(r)).toContain('properties/no-ids');
+      },
+    );
+
+    it('replays a noteId counterexample from its seed', async () => {
+      const first = await runWithId('collision', 'noteId', 'noteId');
+      server = undefined;
+      server = await startPropertiesFixtureApp('collision', { idField: 'noteId' });
+      const again = await runProperties({
+        contract: propertiesFixtureContractWithIdField('noteId'),
+        baseUrl: server.baseUrl,
+        password: server.password,
+        runId: 'test',
+        numRuns: 50,
+        seed: first.seed,
+      });
+      expect(again.path).toBe(first.path);
+      expect(again.counterexample).toBe(first.counterexample);
+    });
   });
 
   it('errors, instead of passing, when the app cannot be reached', async () => {

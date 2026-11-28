@@ -9,15 +9,24 @@
  *                  with 0-7. A fixed-example matrix that happens to hit another id would miss it.
  *   collision      ids come from a space of three values. When an org creates an id that another org
  *                  already holds, the id becomes "shared" and the org check passes for both orgs.
+ *   missing-rls-policy  list is scoped, but read, update and delete by id skip the org check.
  */
 import { randomUUID, createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { fixtureContract } from '../tenant-isolation/fixture-app.js';
 
-export { fixtureContract as propertiesFixtureContract } from '../tenant-isolation/fixture-app.js';
+export {
+  fixtureContract as propertiesFixtureContract,
+  fixtureContractWithIdField as propertiesFixtureContractWithIdField,
+} from '../tenant-isolation/fixture-app.js';
 
-export type PropertiesVariant = 'good' | 'leaky-by-id' | 'collision';
+export type PropertiesVariant = 'good' | 'leaky-by-id' | 'collision' | 'missing-rls-policy';
+
+export interface PropertiesFixtureOptions {
+  /** Name of the response field carrying a row's id (the contract's idField). Default id. */
+  readonly idField?: string;
+}
 
 interface Row {
   id: string;
@@ -45,7 +54,13 @@ async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> 
 
 export async function startPropertiesFixtureApp(
   variant: PropertiesVariant,
+  options: PropertiesFixtureOptions = {},
 ): Promise<PropertiesFixtureServer> {
+  const idName = options.idField ?? 'id';
+  const shape = (v: unknown): unknown => {
+    if (typeof v !== 'object' || v === null || Array.isArray(v)) return v;
+    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k === 'id' ? idName : k, x]));
+  };
   const password = randomUUID();
   const orgIds = { a: randomUUID(), b: randomUUID() };
   const rows = new Map<string, Row>();
@@ -64,7 +79,7 @@ export async function startPropertiesFixtureApp(
     void (async () => {
       const send = (status: number, body?: unknown, headers: Record<string, string> = {}): void => {
         res.writeHead(status, { 'content-type': 'application/json', ...headers });
-        res.end(body === undefined ? '' : JSON.stringify(body));
+        res.end(body === undefined ? '' : JSON.stringify(shape(body)));
       };
       const notFound = (): void => send(404, { code: 'not_found', message: 'Not found' });
       try {
@@ -98,7 +113,7 @@ export async function startPropertiesFixtureApp(
         const mine = (id: string): Row | undefined => {
           const r = rows.get(id);
           if (!r) return undefined;
-          if (r.org_id === session.org) return r;
+          if (r.org_id === session.org || variant === 'missing-rls-policy') return r;
           // Planted: the org check is skipped for an id that two orgs both created.
           return variant === 'collision' && shared.has(id) ? r : undefined;
         };
