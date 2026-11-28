@@ -31,6 +31,9 @@ const PATH_KEYS = new Set(
     'oldPath',
     'cwd',
     'directory',
+    'uri',
+    'url',
+    'href',
   ].map((k) => k.toLowerCase()),
 );
 /** Keys whose string values hold commands, not paths, so the "looks absolute" scan skips them. */
@@ -47,6 +50,18 @@ function normalizeAbs(path: string): string | undefined {
 function isUnder(path: string, root: string): boolean {
   const r = normalizeAbs(root);
   return r !== undefined && (path === r || path.startsWith(r === '/' ? '/' : r + '/'));
+}
+
+/** `file:///a/b` to `/a/b`. Undefined for a remote host, bad escapes or a NUL. */
+function fileUriToPath(uri: string): string | undefined {
+  const rest = uri.slice('file://'.length);
+  if (!rest.startsWith('/')) return undefined; // a host part (file://host/...) cannot be checked
+  try {
+    const decoded = decodeURIComponent(rest);
+    return decoded.includes('\0') ? undefined : decoded;
+  } catch {
+    return undefined;
+  }
 }
 
 interface Collected {
@@ -68,7 +83,11 @@ function collectRawPaths(raw: unknown, scanValues: boolean): Collected {
     const keyed = key !== undefined && PATH_KEYS.has(key.toLowerCase());
     if (typeof value === 'string') {
       const commandish = key !== undefined && COMMAND_KEYS.has(key.toLowerCase());
-      if (keyed || (scanValues && !commandish && value.startsWith('/'))) {
+      if (value.toLowerCase().startsWith('file://')) {
+        const p = fileUriToPath(value);
+        if (p === undefined) out.unresolvable = true;
+        else out.paths.push(p);
+      } else if (keyed || (scanValues && !commandish && value.startsWith('/'))) {
         if (value.startsWith('/')) out.paths.push(value);
         else out.unresolvable = true;
       }
@@ -97,6 +116,104 @@ function checkPaths(paths: readonly string[], roots: readonly string[]): PathChe
 }
 
 /**
+ * Commands are checked with an allow-list, not a deny-list. A command string is
+ * accepted only when it has no shell syntax at all, starts with one of the entries
+ * below, and every argument stays inside the allowed roots. Anything else is denied.
+ * Allowed: `pnpm test|typecheck|lint|build`, `pnpm exec vitest|tsc|prettier|eslint`,
+ * `vitest`, `tsc`, and `git status|diff` with a fixed flag set. Everything else is
+ * denied: shells, `node`, `npx`, `env`, `printenv`, `set`, `export`, `cd`, `cat`.
+ */
+const SHELL_SYNTAX = /[;&|<>\u0060$(){}\\*?~!#\n\r\0]/;
+const PNPM_SCRIPTS = new Set(['test', 'typecheck', 'lint', 'build']);
+const PNPM_EXEC = new Set(['vitest', 'tsc', 'prettier', 'eslint']);
+const GIT_FLAGS = new Set([
+  '--stat',
+  '--name-only',
+  '--name-status',
+  '--cached',
+  '--staged',
+  '--short',
+  '-s',
+  '--porcelain',
+  '--shortstat',
+  '--no-color',
+]);
+const FORBIDDEN_WORDS = new Set(['env', 'printenv', 'set', 'export', 'cd', 'sh', 'bash', 'eval']);
+
+/** Splits on unquoted whitespace. Quotes group but never allow shell syntax. */
+function tokenize(command: string): string[] | undefined {
+  const tokens: string[] = [];
+  let cur = '';
+  let quote: string | undefined;
+  let started = false;
+  for (const ch of command) {
+    if (quote) {
+      if (ch === quote) quote = undefined;
+      else cur += ch;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+      started = true;
+    } else if (ch === ' ' || ch === '\t') {
+      if (started || cur) tokens.push(cur);
+      cur = '';
+      started = false;
+    } else {
+      cur += ch;
+      started = true;
+    }
+  }
+  if (quote) return undefined;
+  if (started || cur) tokens.push(cur);
+  return tokens;
+}
+
+function argumentStaysInside(arg: string, roots: readonly string[]): boolean {
+  // --flag=value is checked on its value as well as on the whole argument.
+  const parts = arg.includes('=') ? [arg, arg.slice(arg.indexOf('=') + 1)] : [arg];
+  for (const part of parts) {
+    if (part.includes('://') || part.includes('..')) return false;
+    if (DENIED_ROOTS.some((d) => part.includes(d))) return false;
+    if (part.startsWith('/')) {
+      const n = normalizeAbs(part);
+      if (n === undefined || !roots.some((r) => isUnder(n, r))) return false;
+    }
+  }
+  return true;
+}
+
+function checkCommand(raw: unknown, roots: readonly string[]): PathCheck {
+  const input = raw !== null && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const value = input['command'] ?? input['cmd'];
+  let tokens: string[] | undefined;
+  if (typeof value === 'string') {
+    if (SHELL_SYNTAX.test(value)) return { ok: false, why: 'command uses shell syntax' };
+    tokens = tokenize(value);
+  } else if (Array.isArray(value) && value.every((v) => typeof v === 'string')) {
+    tokens = value as string[];
+    if (tokens.some((t) => SHELL_SYNTAX.test(t)))
+      return { ok: false, why: 'command uses shell syntax' };
+  }
+  if (tokens === undefined || tokens.length === 0)
+    return { ok: false, why: 'command cannot be parsed' };
+  if (tokens.some((t) => FORBIDDEN_WORDS.has(t)))
+    return { ok: false, why: 'command uses a forbidden word' };
+  const [bin, a, b] = tokens as [string, ...string[]];
+  let args: string[];
+  if (bin === 'pnpm' && a !== undefined && PNPM_SCRIPTS.has(a)) args = tokens.slice(2);
+  else if (bin === 'pnpm' && a === 'exec' && b !== undefined && PNPM_EXEC.has(b))
+    args = tokens.slice(3);
+  else if (bin === 'vitest' || bin === 'tsc') args = tokens.slice(1);
+  else if (bin === 'git' && (a === 'status' || a === 'diff')) {
+    args = tokens.slice(2);
+    for (const x of args) {
+      if (x.startsWith('-') && !GIT_FLAGS.has(x)) return { ok: false, why: 'git flag not allowed' };
+    }
+  } else return { ok: false, why: 'command is not on the allow-list' };
+  return args.every((x) => argumentStaysInside(x, roots))
+    ? { ok: true }
+    : { ok: false, why: 'command argument is outside allowed paths' };
+}
+/**
  * Decides one `session/request_permission`. Deny by default: no policy, an unknown
  * tool kind, an access without a path, or any path (in `locations` or anywhere in
  * `rawInput`) outside the allowed roots or inside a denied root all reject.
@@ -110,6 +227,7 @@ export function decidePermission(
   policy: PermissionPolicy | undefined,
   toolCall: PermissionParams['toolCall'],
   readRoots?: readonly string[],
+  options: { commandsEnabled?: boolean } = {},
 ): PermissionDecision {
   if (!policy) return { allowed: false, reason: 'no permission policy: reject all' };
   const kind = toolCall.kind ?? 'other';
@@ -119,14 +237,18 @@ export function decidePermission(
   const isExecute = kind === 'execute';
   if (!isRead && !isWrite && !isThink && !isExecute)
     return { allowed: false, reason: `tool kind ${kind.slice(0, 50)} not allowed` };
-  if (isExecute && !policy.allowCommands)
-    return { allowed: false, reason: 'commands not allowed by policy' };
+  if (isExecute && !(policy.allowCommands && options.commandsEnabled === true))
+    return { allowed: false, reason: 'commands not allowed' };
 
   const located = toolCall.locations?.map((l) => l.path) ?? [];
   const raw = collectRawPaths(toolCall.rawInput, !isExecute);
   const paths = [...located, ...raw.paths];
   if (raw.unresolvable)
     return { allowed: false, reason: `${kind} names a path that cannot be checked` };
+  if (isExecute) {
+    const c = checkCommand(toolCall.rawInput, [...(readRoots ?? []), ...policy.allowWritesUnder]);
+    if (!c.ok) return { allowed: false, reason: `execute: ${c.why}`.slice(0, 500) };
+  }
   if (paths.length === 0) {
     if (isThink || isExecute) return { allowed: true, reason: `${kind} allowed` };
     return { allowed: false, reason: `${kind} without a location` };

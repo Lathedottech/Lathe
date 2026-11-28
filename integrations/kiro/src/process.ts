@@ -71,3 +71,13 @@ export const hostSpawn: SpawnFn = ({ command, args, env }) => {
     },
   };
 };
+
+const sandboxSpawns = new WeakSet<SpawnFn>();
+/** Marks a SpawnFn that runs inside a hardened sandbox (read-only mounts, no host env). */
+export function markSandboxSpawn<T extends SpawnFn>(fn: T): T {
+  sandboxSpawns.add(fn);
+  return fn;
+}
+export function isSandboxSpawn(fn: SpawnFn): boolean {
+  return sandboxSpawns.has(fn);
+}
