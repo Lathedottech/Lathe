@@ -1,6 +1,5 @@
-# P1 Skeleton: requirements (Proposed)
-
-Status: Proposed. Not started until a task report with evidence says otherwise (`TASKLIST.md` Status).
+# P1 Skeleton: requirements (Partial)
+Status: Partial. Existing: schema, tenancy, auth, orgs, authz, audit, hierarchical scopes (P7-01), tenant contract, template and generator (P1-07). Check `TASKLIST.md` for which P1 tasks are Done. Source of truth for task status: `TASKLIST.md` (Existing, Partial, Missing, Proposed).
 
 ## Scope
 

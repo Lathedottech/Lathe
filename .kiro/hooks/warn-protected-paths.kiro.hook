@@ -1,14 +1,22 @@
 {
   "enabled": true,
   "name": "Warn on protected path edit",
-  "description": "Warn when a file under packages/verification-harness/ or .github/ is edited. These paths are protected.",
-  "version": "1",
+  "description": "Warn when a protected path is edited: verification harness, .github, hooks, or the architect-owned contracts C1-C4. Advisory only.",
+  "version": "2",
   "when": {
     "type": "fileEdited",
-    "patterns": ["packages/verification-harness/**", ".github/**"]
+    "patterns": [
+      "packages/verification-harness/**",
+      ".github/**",
+      ".kiro/hooks/**",
+      "packages/shared-contracts/src/tenant-contract.ts",
+      "packages/shared-contracts/src/kiro-adapter.ts",
+      "packages/shared-contracts/src/gates.ts",
+      "packages/shared-contracts/src/api.ts"
+    ]
   },
   "then": {
     "type": "askAgent",
-    "prompt": "WARNING: a protected path was edited (packages/verification-harness/** is owned by verification, .github/** by devops). Stop. Confirm you are the path owner and that the change is part of your assigned task. If not, revert your edit and file a handoff request in docs/handoffs/. Never change these paths to make a check pass."
+    "prompt": "WARNING: a protected path was edited. Owners: packages/verification-harness/** is verification, .github/** and .kiro/hooks/** are devops, contracts C1-C4 (tenant-contract.ts, kiro-adapter.ts, gates.ts, api.ts in packages/shared-contracts/src) are architect. Stop. Confirm you are the path owner and that the change is part of your assigned task. If not, revert your edit and file a handoff request in docs/handoffs/. Never change these paths to make a check pass."
   }
 }

@@ -1,6 +1,5 @@
-# P7 Team Operations: requirements (Proposed)
-
-Status: Proposed. Not started until a task report with evidence says otherwise (`TASKLIST.md` Status).
+# P7 Team Operations: requirements (Partial)
+Status: Partial. Existing: hierarchical scopes (P7-01), Team Operations scaffold with teams, projects and tasks (P7-02). Missing: UI, shared resources module. Source of truth for task status: `TASKLIST.md` (Existing, Partial, Missing, Proposed).
 
 ## Scope
 

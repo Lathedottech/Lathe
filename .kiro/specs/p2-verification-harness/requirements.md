@@ -1,6 +1,5 @@
-# P2 Verification Harness: requirements (Proposed)
-
-Status: Proposed. Not started until a task report with evidence says otherwise (`TASKLIST.md` Status).
+# P2 Verification Harness: requirements (Partial)
+Status: Partial. Existing: runner, result hash and CLI (P2-01), protected-path check (P2-02). Missing: the remaining gates and suites. Source of truth for task status: `TASKLIST.md` (Existing, Partial, Missing, Proposed).
 
 ## Scope
 

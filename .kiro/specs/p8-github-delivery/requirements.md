@@ -1,6 +1,5 @@
-# P8 GitHub delivery: requirements (Proposed)
-
-Status: Proposed. Not started until a task report with evidence says otherwise (`TASKLIST.md` Status).
+# P8 GitHub delivery: requirements (Partial)
+Status: Partial. Existing: CI verify workflow (P8-02). Missing: branch, commit and draft PR delivery (P8-01). Source of truth for task status: `TASKLIST.md` (Existing, Partial, Missing, Proposed).
 
 ## Scope
 

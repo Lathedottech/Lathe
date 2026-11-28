@@ -1,6 +1,5 @@
-# P9 Landing page and Workspace: requirements (Proposed)
-
-Status: Proposed. Not started until a task report with evidence says otherwise (`TASKLIST.md` Status).
+# P9 Landing page and Workspace: requirements (Partial)
+Status: Partial. Existing: design system (P9-00), landing page (P9-01), Workspace shell (P9-02). Missing: dashboard, project, run, verification and delivery screens. Source of truth for task status: `TASKLIST.md` (Existing, Partial, Missing, Proposed).
 
 ## Scope
 

@@ -1,6 +1,5 @@
-# P3 Factory Engine core: requirements (Proposed)
-
-Status: Proposed. Not started until a task report with evidence says otherwise (`TASKLIST.md` Status).
+# P3 Factory Engine core: requirements (Partial)
+Status: Partial. Existing: Engine schema and spec/plan types (P3-01). Missing: state machine, evidence, approvals, API. Source of truth for task status: `TASKLIST.md` (Existing, Partial, Missing, Proposed).
 
 ## Scope
 

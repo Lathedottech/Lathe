@@ -1,6 +1,5 @@
-# P10 Deploy and submit: requirements (Proposed)
-
-Status: Proposed. Not started until a task report with evidence says otherwise (`TASKLIST.md` Status).
+# P10 Deploy and submit: requirements (Missing)
+Status: Missing. Nothing built yet. Source of truth for task status: `TASKLIST.md` (Existing, Partial, Missing, Proposed).
 
 ## Scope
 

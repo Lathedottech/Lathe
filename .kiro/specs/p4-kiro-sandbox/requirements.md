@@ -1,6 +1,5 @@
-# P4 Kiro and sandbox: requirements (Proposed)
-
-Status: Proposed. Not started until a task report with evidence says otherwise (`TASKLIST.md` Status).
+# P4 Kiro and sandbox: requirements (Missing)
+Status: Missing. Nothing built yet (`integrations/` is empty). Source of truth for task status: `TASKLIST.md` (Existing, Partial, Missing, Proposed).
 
 ## Scope
 

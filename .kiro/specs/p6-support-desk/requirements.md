@@ -1,6 +1,5 @@
-# P6 Support Desk: requirements (Proposed)
-
-Status: Proposed. Not started until a task report with evidence says otherwise (`TASKLIST.md` Status).
+# P6 Support Desk: requirements (Partial)
+Status: Partial. Existing: Support Desk scaffold, tickets and assignment (P6-01), SLA (P6-02). Missing: approvals, UI, Knowledge Base module. Source of truth for task status: `TASKLIST.md` (Existing, Partial, Missing, Proposed).
 
 ## Scope
 

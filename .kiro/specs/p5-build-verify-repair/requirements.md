@@ -1,6 +1,5 @@
-# P5 Build, verify, repair: requirements (Proposed)
-
-Status: Proposed. Not started until a task report with evidence says otherwise (`TASKLIST.md` Status).
+# P5 Build, verify, repair: requirements (Missing)
+Status: Missing. Nothing built yet. Source of truth for task status: `TASKLIST.md` (Existing, Partial, Missing, Proposed).
 
 ## Scope
 
