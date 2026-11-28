@@ -10,31 +10,67 @@ People: **A** (lead, architect) and **B** (fullstack) split the tasks, see `docs
 
 ## Status
 
-Last updated: 2026-11-17, recorded by the coordinator on behalf of `documentation` from the reports and reviews linked below.
+Last updated: 2026-11-28, recorded by the coordinator on behalf of `documentation` from merged pull requests, their reviews, and the reports in `docs/reports/`.
 
-**Rule:** a task is **Done** only with a report in `docs/reports/` containing real command output AND an approving review in `docs/reviews/`. Allowed values: Not started, In progress, Reported, In review, Done, Blocked, Failed.
+**Rule:** a task is **Done** only when it is merged to `main` with an approving review and a task report with real command output. A pull request merged into another task's branch (a stacked PR) is still **In review** until that stack reaches `main`. Allowed values: Not started, In progress, Reported, In review, Done, Blocked, Failed.
 Only tasks that have started are listed. **Every task not listed is Not started.**
 
 | ID | Status | Evidence | Open items |
 |---|---|---|---|
-| P0-01 Repository init | In progress | Public repo [lathedottech/Lathe](https://github.com/lathedottech/Lathe), first commit `132716f`; MIT `LICENSE` detected by GitHub; `.kiro/` committed and not ignored; `.nvmrc`, `.editorconfig`, `.gitattributes` | No task report or review file yet. Social preview and account avatar uploads are manual and unconfirmed |
-| P0-02 Lean monorepo | Done | [report](docs/reports/P0-02-devops.md), [review](docs/reviews/P0-02-architect.md) (approve, 2026-11-17): install, typecheck, lint, test, format all exit 0; planted type error and failing test both caught | Condition C1: Postgres roles check (`NOSUPERUSER`, `NOBYPASSRLS`) not run because Docker is stopped; blocks P1-02. Node 22 not tested |
-| P0-03 ADRs D1-D6 | Done | [report](docs/reports/P0-03-architect.md), [approval](docs/reviews/P0-03-human.md) by the project lead, bound to a content hash | ADR 0003 stays Proposed until P0-04. ADRs 0004 and 0006 still need `security` review |
-| P0-04 Kiro go/no-go spike | Blocked | Re-checked 2026-11-17: `kiro-cli-chat 2.7.0`, `kiro-cli whoami` returns "Not logged in"; Docker Desktop not running | Project lead must update the Kiro CLI, sign in, and start Docker Desktop and WSL |
-| P0-07 Interface contracts C1-C4 | Done | [report](docs/reports/P0-07-architect.md), [approval](docs/reviews/P0-07-human.md) by the project lead: `packages/shared-contracts`, C2-C4 frozen v1, C1 draft; typecheck, lint, test (58 passed), format all exit 0; mutation probe caught | Consumer acknowledgments still pending in [handoff](docs/handoffs/architect-to-consumers-contracts-v1.md). C1 final in P1-06 |
-| P0-08 Agent team setup | Done | [approval](docs/reviews/P0-08-human.md) by the project lead, bound to a content hash | Profiles not yet loaded in Kiro; deny rules untested (P0-09) |
-| P1-01 Schema, migrations, audit table | In progress | Branch `task/P1-01-schema-audit` (B), commit `d871d78` | No report or review yet |
+| P0-01 Repository init | Done | Public repo [lathedottech/Lathe](https://github.com/lathedottech/Lathe), MIT license, `.kiro/` tracked, `main` protected | Social preview upload unconfirmed |
+| P0-02 Lean monorepo | Done | [report](docs/reports/P0-02-devops.md), [review](docs/reviews/P0-02-architect.md) | Node 22 not tested |
+| P0-03 ADRs D1-D6 | Done | [report](docs/reports/P0-03-architect.md), [approval](docs/reviews/P0-03-human.md) | ADR 0003 approved in #15 |
+| P0-04 Kiro go/no-go spike | Done | #8: ACP in a hardened container works (mode B); [ADR 0003 approval](docs/reviews/ADR-0003-human.md) | Kiro terms for automated use on the Free plan unconfirmed |
+| P0-05 Dev-time Kiro setup | In review | #27 | Changes requested: save-hook test command; hooks firing in the IDE not yet checked |
+| P0-06 CI and protection | Done | #6; `main` requires CI, one approval and code-owner review | |
+| P0-07 Interface contracts C1-C4 | Done | #4 (v1.1), #15 (v1.2), C1 frozen in #18 | C1 v2 (scopes, Team Operations projects and tasks) pending the scopes handoff |
+| P0-08 Agent team setup | Done | [approval](docs/reviews/P0-08-human.md) | |
+| P0-10 Import boundaries | Done | #12 | |
+| P1-01 Schema, migrations, audit table | Done | #1 | |
+| P1-02 Tenancy and RLS | Done | #3 | |
+| P1-03 Auth | Done | #9 | Follow-ups: separate auth DB role; `ipAddressHeaders` default |
+| P1-04 Orgs and invitations | Done | #10 | Follow-ups: bind invite to email; bound invite TTL |
+| P1-05 Authorization and audit write | Done | #11 | |
+| P1-06 Tenant contract | Done | #18 | |
+| P1-07 Template app and generator | Done | #30 (together with P6-01) | |
+| P2-01 Runner, result schema, CLI | Done | #5 | |
+| P2-02 Protected-path check | Done | #5 (#7 merged into it) | |
+| P2-03 Build, type, lint, test gates | In review | #22 | Changes requested: remaining `.fails` bypasses, `@ts-expect-error`, deleted tests, `tsconfig` weakening |
+| P2-04 Tenant isolation suite | In review | #23, merged into the #22 stack | Org id must come from a trusted source, fail closed |
+| P2-05 RBAC matrix and deny-by-default | In review | #24, merged into the #22 stack | |
+| P2-06 Property-based suite | In review | #26, merged into the P2-05 branch, not on `main` yet | Use the contract `idField`, fail closed |
+| P2-07 Secret scan and dependency audit | In review | #28, merged into the P2-06 branch, not on `main` yet | Real `pnpm audit` not run |
+| P3-01 Engine schema and spec/plan types | Done | #19 | |
+| P3-02 Run state machine | In review | #20 | B's insert-guard point fixed in `467117a`, waiting for re-review |
+| P3-03 Evidence and approvals | In review | #21, merged into #20 | Reaches `main` with #20 |
+| P3-04 Engine API and SSE | In review (partial) | #32 | Changes requested: separation of duties, SSE after session revocation, per-org run store; no Postgres store |
+| P4-01 Kiro adapter | In review | #33 | Changes requested: `execute` command paths; real-CLI smoke not run |
+| P4-02 Hardened sandbox | In review | #34, merged into #33 | Live check 10/10; reaches `main` with #33 |
+| P4-03 Worktree and diff | In review | #36 | Changes requested: host git config ignored |
+| P4-04 Runtime agent configs | In review | #41 | Real CLI load not run (needs Kiro login) |
+| P5-01 Plan step | In review | #42 | Tested with fakes only |
+| P5-02 Build step | In review | #43 | Tested with fakes only |
+| P5-03 Independent verification | In review | #44 | No real verifier container run yet |
+| P5-04 Repair loop | In review | #45 | Final run reason is `verification_failed`, not `repair_exhausted` |
+| P5-05 Demo fault injection | In review | #46 | Check that the injected change still compiles |
+| P6-01 Support Desk scaffold | Done | #30 | |
+| P6-02 SLA | Done | #35 | |
+| P7-01 Hierarchical scopes | Done | #25 | |
+| P7-02 Team Operations scaffold | Done | #37 | Projects and tasks not in the app's tenant contract yet |
+| P8-01 Branch, commit, draft PR | In review | #47 | No real GitHub call; not wired in the Engine composition root |
+| P8-02 CI verify workflow | Done | #38 | |
+| P9-00 Design system and wireframes | Done | #13, UI reference in #31 | |
+| P9-01 Public landing page | In progress | Skeleton merged in #16 | Final version due Dec 1 |
+| P9-02 Workspace shell and navigation | Done | #39 | |
 
-Team C tasks P11-01 to P11-12 (added Nov 27): Proposed, not started.
-
-Not started: P0-05, P0-06, P0-09, P0-10. P0-06 needs the CODEOWNERS GitHub usernames of persons A and B.
+Not started: P0-09, P5-06, P5-07, P6-03, P6-04, P6-05, P7-03, P7-04, P9-03 to P9-08, P10-01 to P10-04, and Team C tasks P11-01 to P11-12 (P10-01 to P10-03 are delivered through P11-03, P11-04, P11-06, P11-08 and P11-09).
 
 ### Next dependency-ready tasks
 
-- P2-01 (verification runner): P0-02 Done, uses C3.
-- P3-01 (Engine schema and spec/plan types): P0-02 Done, uses C4.
-- P0-10 (import-boundary enforcement, B): P0-02 Done.
-- P0-05 (dev-time hooks and specs).
+- Merge the stacks in order: #20; #33; #22; then #36 → #41 and #42 → #43 → #44 → #45, #46, #47.
+- Engine composition root (`main.ts`) wiring the real Kiro adapter, sandbox, Postgres stores and GitHub client, then the P5-07 rehearsal.
+- P9-04 and P9-05 (B) against the P3-04 routes.
+- Team C: P11-01, P11-02, P11-04, P11-05.
 ---
 
 ## P0. Bootstrap and Kiro go/no-go
@@ -125,6 +161,8 @@ Not started: P0-05, P0-06, P0-09, P0-10. P0-06 needs the CODEOWNERS GitHub usern
 **P5-06. Self-certification attack tests** (Nov 27): fake agents that edit `packages/verification-harness/`, delete tests, add `.skip`, print "all tests passed". Must | P5-04 | verification | `services/factory-engine/test/adversarial/*` | No attack reaches AWAITING_APPROVAL | The tests.
 
 **P5-07. Vertical slice demonstration** (rehearse Nov 28, final by Dec 1): Must | P5-01..06, P8-01, P9-04, P9-05, P9-06, P6-01 | architect | `specs/kb-articles.md`, `docs/demo/runbook.md`, recorded evidence |
+
+**P5-08. Engine composition root and real-run wiring** (Nov 28): `services/factory-engine/src/main.ts` wires the real Kiro adapter (P4-01), Docker sandbox and worktree (P4-02, P4-03), Postgres stores for plans, patches, approvals and evidence, the verifier, and the GitHub client (P8-01) into the pipeline steps P5-01 to P5-05 and the API (P3-04). Secrets only from environment variables. Must | P5-01..P5-05, P8-01, P3-04 | backend | `services/factory-engine/src/main.ts`, `services/factory-engine/src/db/stores/*` | One full run with the fake ACP server, then one with real Kiro: spec → plan → build → injected bug caught → repair → fresh verify → draft PR | Integration test with the fake agent; real-run evidence recorded.
 Acceptance:
 1. User creates a project in Lathe Workspace.
 2. User submits a specification (Support Desk Knowledge Base module).
@@ -187,6 +225,8 @@ One Next.js app, two route groups: `(marketing)` (public, static, no Engine call
 **P9-07. Responsive polish and accessibility** (Dec 2): responsive desktop, tablet and mobile; keyboard navigation; contrast; consistent empty, loading and error states; performance pass; browser tests. Should | P9-01, P9-02, P9-03, P9-04, P9-05, P9-06 | frontend | `apps/workspace/*`, `tests/e2e/*` | Playwright suite passes; no critical accessibility or navigation issues in the automated scan and a manual keyboard pass | Playwright; automated accessibility scan (tool named in the task report with the reason).
 
 **P9-08. Read-only replay mode** (Dec 2): public Workspace instance showing real recorded runs with a "recorded run" banner and no write endpoints. Could | P9-06 | frontend | `apps/workspace/*`, `infra/deploy/*` | No write endpoint reachable; every run shown is a real recorded run | Playwright; request audit proving no non-GET calls.
+
+**P9-09. Ghost guide and honest playful errors** (Nov 29): a small ghost in the run and verification screens (P9-04, P9-05) that explains each step in one sentence and reacts when a gate catches the injected bug (for example "Boo. Someone dropped the tenant filter. Org B can see Org A's tickets."), plus playful but accurate error and empty-state messages. Every message names a real state or next action, never invents data, and the "injected by Lathe" label stays visible. Should | P9-04, P9-05 | frontend | `apps/workspace/src/components/ghost/*`, copy in `apps/workspace/src/app/(app)/*` | A first-time user knows what to click next on every run screen; messages match real Engine states | Component tests per run state; copy reviewed against the honesty rules.
 ## P10. Deploy and submit
 
 **P10-01. Deploy apps and landing page** (Nov 30): both apps on D13 host, plus the static landing page (`(marketing)` routes only, no Engine reachable from it), with non-owner DB role and seeded demo tenants and credentials. Must | P6-02, P7-02 | devops | `infra/deploy/*` | Both URLs work; cross-tenant check against prod passes | Harness isolation suite against deployed URL.
