@@ -161,6 +161,8 @@ Not started: P0-09, P5-06, P5-07, P6-03, P6-04, P6-05, P7-03, P7-04, P9-03 to P9
 **P5-06. Self-certification attack tests** (Nov 27): fake agents that edit `packages/verification-harness/`, delete tests, add `.skip`, print "all tests passed". Must | P5-04 | verification | `services/factory-engine/test/adversarial/*` | No attack reaches AWAITING_APPROVAL | The tests.
 
 **P5-07. Vertical slice demonstration** (rehearse Nov 28, final by Dec 1): Must | P5-01..06, P8-01, P9-04, P9-05, P9-06, P6-01 | architect | `specs/kb-articles.md`, `docs/demo/runbook.md`, recorded evidence |
+
+**P5-08. Engine composition root and real-run wiring** (Nov 28): `services/factory-engine/src/main.ts` wires the real Kiro adapter (P4-01), Docker sandbox and worktree (P4-02, P4-03), Postgres stores for plans, patches, approvals and evidence, the verifier, and the GitHub client (P8-01) into the pipeline steps P5-01 to P5-05 and the API (P3-04). Secrets only from environment variables. Must | P5-01..P5-05, P8-01, P3-04 | backend | `services/factory-engine/src/main.ts`, `services/factory-engine/src/db/stores/*` | One full run with the fake ACP server, then one with real Kiro: spec → plan → build → injected bug caught → repair → fresh verify → draft PR | Integration test with the fake agent; real-run evidence recorded.
 Acceptance:
 1. User creates a project in Lathe Workspace.
 2. User submits a specification (Support Desk Knowledge Base module).
@@ -223,6 +225,8 @@ One Next.js app, two route groups: `(marketing)` (public, static, no Engine call
 **P9-07. Responsive polish and accessibility** (Dec 2): responsive desktop, tablet and mobile; keyboard navigation; contrast; consistent empty, loading and error states; performance pass; browser tests. Should | P9-01, P9-02, P9-03, P9-04, P9-05, P9-06 | frontend | `apps/workspace/*`, `tests/e2e/*` | Playwright suite passes; no critical accessibility or navigation issues in the automated scan and a manual keyboard pass | Playwright; automated accessibility scan (tool named in the task report with the reason).
 
 **P9-08. Read-only replay mode** (Dec 2): public Workspace instance showing real recorded runs with a "recorded run" banner and no write endpoints. Could | P9-06 | frontend | `apps/workspace/*`, `infra/deploy/*` | No write endpoint reachable; every run shown is a real recorded run | Playwright; request audit proving no non-GET calls.
+
+**P9-09. Ghost guide and honest playful errors** (Nov 29): a small ghost in the run and verification screens (P9-04, P9-05) that explains each step in one sentence and reacts when a gate catches the injected bug (for example "Boo. Someone dropped the tenant filter. Org B can see Org A's tickets."), plus playful but accurate error and empty-state messages. Every message names a real state or next action, never invents data, and the "injected by Lathe" label stays visible. Should | P9-04, P9-05 | frontend | `apps/workspace/src/components/ghost/*`, copy in `apps/workspace/src/app/(app)/*` | A first-time user knows what to click next on every run screen; messages match real Engine states | Component tests per run state; copy reviewed against the honesty rules.
 ## P10. Deploy and submit
 
 **P10-01. Deploy apps and landing page** (Nov 30): both apps on D13 host, plus the static landing page (`(marketing)` routes only, no Engine reachable from it), with non-owner DB role and seeded demo tenants and credentials. Must | P6-02, P7-02 | devops | `infra/deploy/*` | Both URLs work; cross-tenant check against prod passes | Harness isolation suite against deployed URL.

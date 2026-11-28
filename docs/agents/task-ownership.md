@@ -49,6 +49,7 @@ Generated from TASKLIST.md on 2026-11-15 (updated with the P9 UX/UI workstream),
 | P5-05 | Demo fault injection | A | backend | security + architect | Must | 1 | Nov 27 | P5-02 | W4 |
 | P5-06 | Self-certification attack tests | A | verification | security + architect | Must | 1 | Nov 27 | P5-04 | W4 |
 | P5-07 | Vertical slice demonstration | A | architect | human | Must | 1 | rehearse Nov 28, final by Dec 1 | P5-01..06, P8-01, P9-04, P9-05, P9-06, P6-01 | W5 |
+| P5-08 | Engine composition root and real-run wiring | A | backend | security + architect | Must | 1 | Nov 28 | P5-01..P5-05, P8-01, P3-04 | W4 |
 | P6-01 | Scaffold, roles, tickets, assignments | B | backend | architect | Must | 1 | Nov 22 | P1-07 | W2 |
 | P6-02 | SLA | B | backend | architect | Must | 1 | Nov 25 | P6-01 | W3 |
 | P6-03 | Approvals | B | backend | security + architect | Should | 2 | Nov 27 | P6-01 | W3 |
@@ -69,6 +70,7 @@ Generated from TASKLIST.md on 2026-11-15 (updated with the P9 UX/UI workstream),
 | P9-06 | Verification and delivery interface | B | frontend | security + architect | Must | 1 | Nov 30 | P9-05, P8-01, P3-03 | W5 |
 | P9-07 | Responsive polish and accessibility | B | frontend | architect | Should | 2 | Dec 2 | P9-01, P9-02, P9-03, P9-04, P9-05, P9-06 | W5 |
 | P9-08 | Read-only replay mode | B | frontend | architect | Could | 3 | Dec 2 | P9-06 | W5 |
+| P9-09 | Ghost guide and honest playful errors | B | frontend | architect | Should | 2 | Nov 29 | P9-04, P9-05 | W5 |
 | P10-01 | Deploy apps and landing page | C | devops | security + architect (B consulted) | Must | 1 | Nov 30 | P6-02, P7-02 | W6 |
 | P10-02 | Security checklist | C | security | human (A approves) | Must | 1 | Dec 1 | all Must | W6 |
 | P10-03 | README, judge guide, Kiro write-up | C | documentation | human | Must | 1 | Dec 2 | P10-01 | W6 |
