@@ -21,6 +21,35 @@ export {
   type PlanSource,
 } from './build.js';
 export {
+  FaultInjectionError,
+  applyFault,
+  createFaultInjector,
+  faultFlagFor,
+  type FaultErrorCode,
+  type FaultInjection,
+  type FaultResult,
+  type FaultRun,
+  type RunFaultSource,
+} from './fault.js';
+export {
+  VERIFY_PATCH_FILE,
+  VERIFY_REPORT_FILE,
+  VERIFY_WORKTREE,
+  verifyArgv,
+  bindingHash,
+  runVerifyStep,
+  verifierSandboxSpec,
+  type PatchSource,
+  type VerifierHandle,
+  type VerifierSandboxContext,
+  type VerifierSandboxProvider,
+  type VerifyErrorReason,
+  type VerifyExecResult,
+  type VerifyRefusalReason,
+  type VerifyStepDeps,
+  type VerifyStepResult,
+} from './verify.js';
+export {
   PLAN_MAX_ATTEMPTS,
   buildPlannerPrompt,
   extractJsonObjects,
