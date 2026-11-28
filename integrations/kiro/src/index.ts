@@ -58,3 +58,7 @@ export {
   type ReproducibleResult,
   type WorktreeOptions,
 } from './sandbox/worktree.js';
+export {
+  worktreeSandboxResolvers,
+  type WorktreeSandboxResolvers,
+} from './sandbox/worktree-sandbox.js';

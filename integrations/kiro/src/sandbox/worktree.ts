@@ -67,7 +67,9 @@ export function createGitRunner(
       trustedWorkTree: true,
     });
     try {
-      return await runSafeGit(runner, ctx, [...OUTPUT_CONFIG, ...args]);
+      // `-C` makes `git apply` resolve patch paths against the work tree. The git dir stays
+      // explicit, so no repository is discovered from it.
+      return await runSafeGit(runner, ctx, ['-C', path.resolve(cwd), ...OUTPUT_CONFIG, ...args]);
     } catch (cause) {
       if (cause instanceof SandboxError && cause.code === 'patch_failed')
         throw new SandboxError('worktree_failed', cause.message, { cause });
@@ -237,7 +239,15 @@ export class Worktree {
     const ctx = await createSafeGitContext(gitDir, path.join(this.tempDir, 'none'), process.env);
     try {
       const run = (args: string[]): Promise<string> => runSafeGit(commands, ctx, args);
-      await run(['init', '--bare', '-q']);
+      // Written by hand: `git init` rejects the --work-tree the safe-git prefix always passes.
+      await mkdir(path.join(gitDir, 'objects', 'info'), { recursive: true });
+      await mkdir(path.join(gitDir, 'refs', 'heads'), { recursive: true });
+      await writeFile(path.join(gitDir, 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+      await writeFile(
+        path.join(gitDir, 'config'),
+        '[core]\n\trepositoryformatversion = 0\n\tbare = true\n',
+        'utf8',
+      );
       await writeFile(path.join(gitDir, 'objects', 'info', 'alternates'), `${objects}\n`, 'utf8');
       const tree = (await run(['rev-parse', `${base}:${this.appPath}`])).trim();
       const commit = (

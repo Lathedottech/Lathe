@@ -224,7 +224,13 @@ describe('Worktree with real git (integration)', () => {
       GIT_CONFIG_GLOBAL: path.join(work, 'none'),
       GIT_CONFIG_NOSYSTEM: '1',
     };
-    git = createGitRunner(nodeCommandRunner, env);
+    git = createGitRunner(nodeCommandRunner, pickDockerEnv(process.env));
+    // Fixture setup only: plain git with a neutral config. The code under test uses safe git.
+    const setup = async (args: string[]): Promise<string> => {
+      const r = await nodeCommandRunner.run('git', args, { cwd: repo, env });
+      if (r.code !== 0) throw new Error('git ' + (args[0] ?? '') + ': ' + r.stderr);
+      return r.stdout;
+    };
     const files: Record<string, string> = {
       'apps/demo/src/a.ts': 'export const a = 1;\n',
       'apps/demo/src/crlf.txt': 'one\r\ntwo\r\n',
@@ -237,10 +243,10 @@ describe('Worktree with real git (integration)', () => {
       await mkdir(path.dirname(path.join(repo, f)), { recursive: true });
       await writeFile(path.join(repo, f), c);
     }
-    await git(['init', '-q', '-b', 'main'], { cwd: repo });
-    await git(['add', '-A'], { cwd: repo });
-    await git(['commit', '-q', '-m', 'base'], { cwd: repo });
-    sha = (await git(['rev-parse', 'HEAD'], { cwd: repo })).trim();
+    await setup(['init', '-q', '-b', 'main']);
+    await setup(['add', '-A']);
+    await setup(['commit', '-q', '-m', 'base']);
+    sha = (await setup(['rev-parse', 'HEAD'])).trim();
   }, 60_000);
   afterEach(async () => {
     await removeDir(work, nodeCommandRunner);

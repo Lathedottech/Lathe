@@ -54,3 +54,21 @@ P4-02 (PR #34, base of this branch) must merge first. P2-02 is Done on this base
 ## 8. Recommended next task
 
 P5-02 (build step: sandbox, prompt, diff, protected-path check, destroy), using `Worktree.hostMounts()` and `collectPatch()`.
+
+## Security fix (PR #36 review, blocking point from B)
+
+**Finding:** `worktree.ts` ran git on the Engine host with host global/system config. A host `filter` plus an agent-planted `apps/<app>/.gitattributes` would have run on the host.
+
+**Fix**
+- `createGitRunner` now sends every git call through `runSafeGit` (#34 helper): explicit `--git-dir`, `GIT_CONFIG_NOSYSTEM`, empty `GIT_CONFIG_GLOBAL`, `GIT_ATTR_NOSYSTEM`, `GIT_CEILING_DIRECTORIES`, `core.attributesFile`/hooks/fsmonitor/pager off, minimal env. `-C <worktree>` is added so `git apply` resolves paths.
+- `Worktree.collectPatch` calls `assertNoGitMetadata` on the app dir first; any `.git`, `.gitattributes` or `.gitmodules` fails with `unsafe_git_metadata` (fail closed).
+- `Worktree.trustedGitDir()` builds a private bare git dir outside every mount (objects via alternates, HEAD = commit whose root tree is the app tree at `baseCommit`). `worktreeSandboxResolvers(wt, volume)` in `worktree-sandbox.ts` supplies `resolveHostMounts` and `resolveGitDir` for `DockerSandboxOptions`, plus `dispose()`.
+- Test first: `worktree-safe.test.ts` (host `GIT_CONFIG_GLOBAL` with a clean filter that writes a marker, planted `.gitattributes`). Before the fix: FAIL (`expected undefined to be an instance of SandboxError`, patch accepted). After: passes, marker not created. A second test runs DockerSandbox with Worktree resolvers end to end (real git, faked docker).
+- `worktree.test.ts` fixture setup now uses plain git (the safe runner needs an existing git dir).
+
+**Legacy path:** `DockerSandbox.collectPatch` (host-dir, app-relative paths) is still required by the C2 `SandboxHandle` contract and by its tests, so it is not removed. It is already safe-git based. Marked `TODO(P5-02)`: remove when the pipeline calls `Worktree.collectPatch` directly.
+
+**Known limits**
+- `Patch.diff` is a UTF-8 string. `git diff --binary` output is ASCII, but a text file in a non-UTF-8 encoding is not preserved byte for byte in the diff text. Accepted for the MVP.
+- The symlink rejection test cannot create symlinks on Windows without privileges. CI must run `worktree.test.ts` on Linux so it is exercised.
+- Egress proxy digest: `lathe/egress-proxy:p4-02` is `sha256:3a3fbff9014835048e3346f28539398c757df69da6be9d79bb25190f178d91e6` locally. The repo pins no real digest (tests use placeholders, the check script reads `LATHE_PROXY_IMAGE`), so nothing was updated. A local image ID is not a registry digest; set it when the image is published.
