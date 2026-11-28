@@ -29,14 +29,27 @@ export const INVALID_STATE_MESSAGE = 'not allowed in the current state';
 export interface ApiDeps {
   readonly executor: Executor;
   readonly store: EngineApiStore;
-  /** Used only to cancel a run (a non-passing transition). The API never sets a passing state. */
-  readonly runStore: RunStore;
+  /**
+   * Builds the run store for one request, bound to the caller's org and (for Postgres) to
+   * the request's tenant transaction. Used only to cancel a run (a non-passing transition).
+   * The API never sets a passing state.
+   */
+  readonly runStoreFor: (orgId: string, tx: unknown) => RunStore;
   /** Server-generated request id (a UUID). Never read from the client. */
   readonly newRequestId: () => string;
   /** Delay between polls of a live event stream. */
   readonly pollMs?: number;
   readonly sleep?: (ms: number) => Promise<void>;
+  /** Clock in milliseconds, injected so stream limits are testable. */
+  readonly nowMs?: () => number;
 }
+
+/** A live stream re-checks the session and membership at most this often. */
+export const SSE_RECHECK_MS = 5_000;
+/** A live stream is closed after this long. The client reconnects with Last-Event-ID. */
+export const SSE_MAX_DURATION_MS = 15 * 60_000;
+/** Concurrent live streams per user. */
+export const SSE_MAX_PER_USER = 3;
 
 const STATUS: Record<ErrorCode, number> = {
   bad_request: 400,
@@ -60,6 +73,25 @@ function refine(code: ActionErrorCode, message: string): ErrorCode {
 function sendError(reply: FastifyReply, requestId: string, code: ErrorCode, message: string) {
   const body: ApiError = { code, message, requestId } as ApiError;
   return reply.status(STATUS[code]).send(body);
+}
+
+/**
+ * Same-origin check for non-GET routes. Browsers always send Sec-Fetch-Site and
+ * Origin on cross-site writes. Requests that carry neither are not browser requests.
+ */
+export function isSameOrigin(request: FastifyRequest): boolean {
+  const site = request.headers['sec-fetch-site'];
+  if (typeof site === 'string' && site !== 'same-origin' && site !== 'none') return false;
+  const origin = request.headers.origin;
+  if (origin !== undefined) {
+    if (typeof origin !== 'string') return false;
+    try {
+      if (new URL(origin).host !== request.headers.host) return false;
+    } catch {
+      return false;
+    }
+  }
+  return true;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -147,6 +179,16 @@ export function buildApiServer(deps: ApiDeps): ApiServer {
     routes.push({ method: String(options.method), url: options.url, permission });
   });
 
+  // CSRF defence in depth: a browser state-changing request must come from this origin.
+  app.addHook('onRequest', async (request, reply) => {
+    if (request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS') {
+      return;
+    }
+    if (!isSameOrigin(request)) {
+      return sendError(reply, request.id, 'forbidden', 'cross-origin request refused');
+    }
+  });
+
   app.setErrorHandler((error, request, reply) => {
     const e = error as { statusCode?: number; code?: string };
     if (typeof e.statusCode === 'number' && e.statusCode >= 400 && e.statusCode < 500) {
@@ -203,7 +245,16 @@ export function buildApiServer(deps: ApiDeps): ApiServer {
     });
   }
 
-  const { store, runStore } = deps;
+  const { store } = deps;
+  const nowMs = deps.nowMs ?? (() => Date.now());
+  const openStreams = new Map<string, number>();
+
+  /** Spec submitter must not approve their own plan or delivery. Unknown spec: not decidable. */
+  async function submitterOf(ctx: RouteContext, specId: string): Promise<string> {
+    const spec = await store.getSpec(ctx, specId);
+    if (spec === null) throw new ActionError('conflict', INVALID_STATE_MESSAGE);
+    return spec.submittedBy;
+  }
 
   register({
     name: 'listProjects',
@@ -278,6 +329,10 @@ export function buildApiServer(deps: ApiDeps): ApiServer {
     handler: async (ctx, i) => {
       const body = i.body as { decision: 'approved' | 'rejected'; contentSha256: string };
       const plan = orNotFound(await store.getPlan(ctx, id(param(i, 'planId'))));
+      // Separation of duties: the spec's submitter cannot approve its plan.
+      if ((await submitterOf(ctx, plan.specId)) === ctx.userId) {
+        throw new ActionError('forbidden', 'not allowed');
+      }
       if (plan.status !== 'proposed') throw new ActionError('conflict', INVALID_STATE_MESSAGE);
       if (body.contentSha256 !== plan.contentSha256) {
         throw new ActionError('conflict', STALE_APPROVAL_MESSAGE);
@@ -317,7 +372,9 @@ export function buildApiServer(deps: ApiDeps): ApiServer {
     resourceType: 'run',
     handler: async (ctx, i) => {
       const runId = id(param(i, 'runId'));
+      // Org check and transition share the request's tenant transaction (ctx.tx).
       orNotFound(await store.getRun(ctx, runId));
+      const runStore = deps.runStoreFor(ctx.orgId, ctx.tx);
       try {
         // CANCELLED is a non-passing state: no EngineCapability is needed or given.
         await transitionRun(runStore, runId, 'CANCELLED', { reason: 'cancelled by operator' });
@@ -338,7 +395,12 @@ export function buildApiServer(deps: ApiDeps): ApiServer {
     handler: async (ctx, i) => {
       const body = i.body as { decision: 'approved' | 'rejected'; contentSha256: string };
       const runId = id(param(i, 'runId'));
-      orNotFound(await store.getRun(ctx, runId));
+      const run = orNotFound(await store.getRun(ctx, runId));
+      // Separation of duties: neither the spec's submitter nor whoever started the run.
+      const startedBy = await store.getRunStartedBy(ctx, runId);
+      if (startedBy === ctx.userId || (await submitterOf(ctx, run.specId)) === ctx.userId) {
+        throw new ActionError('forbidden', 'not allowed');
+      }
       const current = await store.getDeliveryContentHash(ctx, runId);
       if (current === null) throw new ActionError('conflict', INVALID_STATE_MESSAGE);
       if (body.contentSha256 !== current) throw new ActionError('conflict', STALE_APPROVAL_MESSAGE);
@@ -377,12 +439,25 @@ export function buildApiServer(deps: ApiDeps): ApiServer {
           return sendError(reply, request.id, 'bad_request', 'invalid resume id');
         after = Number(raw);
       }
-      await streamEvents(reply, value.ctx, value.runId, after);
+      const user = value.ctx.userId;
+      const open = openStreams.get(user) ?? 0;
+      if (open >= SSE_MAX_PER_USER) {
+        return sendError(reply, request.id, 'rate_limited', 'too many open streams');
+      }
+      openStreams.set(user, open + 1);
+      try {
+        await streamEvents(reply, toHeaders(request), value.ctx, value.runId, after);
+      } finally {
+        const left = (openStreams.get(user) ?? 1) - 1;
+        if (left <= 0) openStreams.delete(user);
+        else openStreams.set(user, left);
+      }
     },
   );
 
   async function streamEvents(
     reply: FastifyReply,
+    headers: Headers,
     ctx: RouteContext,
     runId: string,
     from: number,
@@ -400,8 +475,17 @@ export function buildApiServer(deps: ApiDeps): ApiServer {
       closed = true;
     });
     let last = from;
+    const startedAt = nowMs();
+    let checkedAt = startedAt;
     try {
       while (!closed) {
+        const now = nowMs();
+        if (now - startedAt >= SSE_MAX_DURATION_MS) break;
+        if (now - checkedAt >= SSE_RECHECK_MS) {
+          // A revoked session or removed membership ends the stream without another event.
+          if (!(await deps.executor.stillAuthorized(headers, ctx))) break;
+          checkedAt = now;
+        }
         // Read the run state first: if it is terminal now, every event already exists.
         const run = await store.getRun(ctx, runId);
         const finished = run === null || isTerminal(run.state);

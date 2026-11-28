@@ -37,6 +37,7 @@ export class MemoryApiStore implements EngineApiStore {
   private readonly runs: Owned<Run>[] = [];
   private readonly events = new Map<string, RunEvent[]>();
   private readonly deliveryHashes = new Map<string, string>();
+  private readonly startedBy = new Map<string, string>();
   readonly approvals: Array<Approval & { readonly orgId: string }> = [];
 
   constructor(private readonly options: MemoryStoreOptions) {}
@@ -45,7 +46,8 @@ export class MemoryApiStore implements EngineApiStore {
   seedPlan(orgId: string, plan: Plan): void {
     this.plans.push({ orgId, value: plan });
   }
-  seedRun(orgId: string, run: Run): void {
+  seedRun(orgId: string, run: Run, startedBy?: string): void {
+    if (startedBy !== undefined) this.startedBy.set(run.id, startedBy);
     const existing = this.runs.find((r) => r.value.id === run.id);
     if (existing) existing.value = run;
     else this.runs.push({ orgId, value: run });
@@ -181,12 +183,18 @@ export class MemoryApiStore implements EngineApiStore {
       updatedAt: now,
     } as Run;
     this.runs.push({ orgId: ctx.orgId, value: run });
+    this.startedBy.set(run.id, ctx.userId);
     return run;
   }
 
   async getRun(ctx: RouteContext, runId: string): Promise<Run | null> {
     const found = this.runs.find((r) => r.orgId === ctx.orgId && r.value.id === runId);
     return found ? this.withLiveState(found.value) : null;
+  }
+
+  async getRunStartedBy(ctx: RouteContext, runId: string): Promise<string | null> {
+    if (!(await this.getRun(ctx, runId))) return null;
+    return this.startedBy.get(runId) ?? null;
   }
 
   async getDeliveryContentHash(ctx: RouteContext, runId: string): Promise<string | null> {

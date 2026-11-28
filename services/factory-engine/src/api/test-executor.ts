@@ -1,6 +1,6 @@
 import { ActionError, can, type ActionResult, type Authz } from '@lathe/application-foundation';
 import type { z } from 'zod';
-import type { Executor, ExecutorRequest, RouteDefinition } from './executor.js';
+import type { Authorized, Executor, ExecutorRequest, RouteDefinition } from './executor.js';
 
 /** TEST FIXTURE. Never wired in `main`. Sessions are looked up by `authorization: Bearer <token>`. */
 export interface TestSession {
@@ -28,6 +28,17 @@ export class TestExecutor implements Executor {
   readonly sessions = new Map<string, TestSession>();
 
   constructor(private readonly authz: Authz) {}
+
+  async stillAuthorized(headers: Headers, who: Authorized): Promise<boolean> {
+    const token = /^Bearer (.+)$/.exec(headers.get('authorization') ?? '')?.[1];
+    const session = token === undefined ? undefined : this.sessions.get(token);
+    return (
+      session !== undefined &&
+      session.userId === who.userId &&
+      session.orgId === who.orgId &&
+      session.role !== null
+    );
+  }
 
   register<S extends z.ZodType, T>(definition: RouteDefinition<S, T>) {
     if (!this.authz.permissions.includes(definition.permission)) {

@@ -36,7 +36,7 @@ function setup() {
   const server = buildApiServer({
     executor,
     store,
-    runStore,
+    runStoreFor: () => runStore,
     newRequestId: () => `20000000-0000-4000-8000-${String(++n).padStart(12, '0')}`,
     pollMs: 1,
     sleep: async () => {},
@@ -408,7 +408,7 @@ describe('projects, specs and runs', () => {
       return buildApiServer({
         executor,
         store: s.store,
-        runStore: rs,
+        runStoreFor: () => rs,
         newRequestId: () => '60000000-0000-4000-8000-000000000001',
       });
     })();
@@ -530,12 +530,13 @@ describe('approvals', () => {
   it('decides a plan and a delivery with the same hash binding, and never moves the run state', async () => {
     const s = setup();
     const { project } = await createProject(s);
+    const spec = await submitSpec(s, project.id);
     const planId = '40000000-0000-4000-8000-0000000000d1';
     const runId = '40000000-0000-4000-8000-0000000000d2';
     const planHash = hashContent('plan');
     s.store.seedPlan(ORG_A, {
       id: planId,
-      specId: '40000000-0000-4000-8000-0000000000d3',
+      specId: spec.id,
       tasks: [
         {
           key: 't1',
@@ -552,7 +553,7 @@ describe('approvals', () => {
     s.store.seedRun(ORG_A, {
       id: runId,
       projectId: project.id,
-      specId: '40000000-0000-4000-8000-0000000000d3',
+      specId: spec.id,
       planId,
       state: 'AWAITING_APPROVAL',
       demo: false,
@@ -728,7 +729,7 @@ describe('SSE run events', () => {
     const live = buildApiServer({
       executor: s.executor,
       store: s.store,
-      runStore: s.runStore,
+      runStoreFor: () => s.runStore,
       newRequestId: () => '70000000-0000-4000-8000-0000000000ff',
       sleep: async () => {
         polls += 1;
@@ -774,5 +775,332 @@ describe('SSE run events', () => {
     expect(unknownRole.statusCode).toBe(403);
     const anon = await s.app.inject({ method: 'GET', url });
     expect(anon.statusCode).toBe(401);
+  });
+});
+
+function runOf(
+  id: string,
+  projectId: string,
+  specId: string,
+  planId: string | null,
+  state: string,
+) {
+  return {
+    id,
+    projectId,
+    specId,
+    planId,
+    state,
+    demo: false,
+    faultInjection: null,
+    repairAttempts: 0,
+    createdAt: '2026-11-20T10:00:00.000Z',
+    updatedAt: '2026-11-20T10:00:00.000Z',
+  } as never;
+}
+
+describe('separation of duties', () => {
+  async function prepare() {
+    const s = setup();
+    s.executor.sessions.set('owner-submitter', { userId: USER_OP, orgId: ORG_A, role: 'owner' });
+    const { project } = await createProject(s);
+    const spec = await submitSpec(s, project.id);
+    const planId = '80000000-0000-4000-8000-000000000001';
+    const runId = '80000000-0000-4000-8000-000000000002';
+    const planHash = hashContent('plan');
+    const deliveryHash = hashContent('delivery');
+    s.store.seedPlan(ORG_A, {
+      id: planId,
+      specId: spec.id,
+      tasks: [],
+      contentSha256: planHash,
+      status: 'proposed',
+      createdAt: '2026-11-20T10:00:00.000Z',
+    } as never);
+    s.store.seedRun(ORG_A, runOf(runId, project.id, spec.id, planId, 'AWAITING_APPROVAL'));
+    s.store.seedDeliveryHash(runId, deliveryHash);
+    return { s, planId, runId, planHash, deliveryHash };
+  }
+
+  it('denies the spec submitter approving the plan and the delivery, and audits both', async () => {
+    const { s, planId, runId, planHash, deliveryHash } = await prepare();
+    const owner = { authorization: 'Bearer owner-submitter' };
+    const plan = await s.app.inject({
+      method: 'POST',
+      url: `/v1/plans/${planId}/decision`,
+      headers: owner,
+      payload: { decision: 'approved', contentSha256: planHash },
+    });
+    const delivery = await s.app.inject({
+      method: 'POST',
+      url: `/v1/runs/${runId}/delivery/decision`,
+      headers: owner,
+      payload: { decision: 'approved', contentSha256: deliveryHash },
+    });
+    expect(plan.statusCode).toBe(403);
+    expect(delivery.statusCode).toBe(403);
+    expect(s.store.approvals).toHaveLength(0);
+    expect(s.executor.audit).toContainEqual(
+      expect.objectContaining({ action: 'decidePlan', outcome: 'denied' }),
+    );
+    expect(s.executor.audit).toContainEqual(
+      expect.objectContaining({ action: 'decideDelivery', outcome: 'denied' }),
+    );
+  });
+
+  it('denies the delivery approval to whoever started the run', async () => {
+    const { s, runId, deliveryHash } = await prepare();
+    const run = await s.app.inject({ method: 'GET', url: `/v1/runs/${runId}`, headers: VIEWER });
+    const body = run.json() as { projectId: string; specId: string; planId: string };
+    s.store.seedRun(
+      ORG_A,
+      runOf(runId, body.projectId, body.specId, body.planId, 'AWAITING_APPROVAL'),
+      USER_APPROVER,
+    );
+    const res = await s.app.inject({
+      method: 'POST',
+      url: `/v1/runs/${runId}/delivery/decision`,
+      headers: APPROVER,
+      payload: { decision: 'approved', contentSha256: deliveryHash },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(s.store.approvals).toHaveLength(0);
+  });
+});
+
+describe('SSE session and limits', () => {
+  async function live(extra: { sleep: (ms: number) => Promise<void>; nowMs: () => number }) {
+    const s = setup();
+    const { project } = await createProject(s);
+    const runId = '90000000-0000-4000-8000-000000000001';
+    const specId = '90000000-0000-4000-8000-000000000002';
+    s.store.seedRun(ORG_A, runOf(runId, project.id, specId, null, 'BUILDING'));
+    const ev = (seq: number) =>
+      ({
+        runId,
+        seq,
+        at: '2026-11-20T10:00:00.000Z',
+        type: 'state_changed',
+        from: null,
+        to: 'DEFINED',
+      }) as RunEvent;
+    s.store.seedEvents(runId, [ev(0)]);
+    const server = buildApiServer({
+      executor: s.executor,
+      store: s.store,
+      runStoreFor: () => s.runStore,
+      newRequestId: () => '90000000-0000-4000-8000-0000000000ff',
+      pollMs: 1,
+      ...extra,
+    });
+    return { s, server, runId, project, ev };
+  }
+  const ids = (body: string) => [...body.matchAll(/^id: (\d+)$/gm)].map((m) => Number(m[1]));
+
+  it('ends the stream when the session is deleted mid-stream, with no further events', async () => {
+    let clock = 0;
+    let ctl: { s: ReturnType<typeof setup>; runId: string; ev: (n: number) => RunEvent };
+    const l = await live({
+      nowMs: () => clock,
+      sleep: async () => {
+        clock += 6_000;
+        ctl.s.executor.sessions.delete('viewer');
+        ctl.s.store.seedEvents(ctl.runId, [ctl.ev(0), ctl.ev(1)]);
+      },
+    });
+    ctl = l;
+    const res = await l.server.app.inject({
+      method: 'GET',
+      url: `/v1/runs/${l.runId}/events`,
+      headers: VIEWER,
+    });
+    expect(ids(res.body)).toEqual([0]);
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('ends the stream when the membership is removed mid-stream', async () => {
+    let clock = 0;
+    let ctl: { s: ReturnType<typeof setup>; runId: string; ev: (n: number) => RunEvent };
+    const l = await live({
+      nowMs: () => clock,
+      sleep: async () => {
+        clock += 6_000;
+        ctl.s.executor.sessions.set('viewer', { userId: USER_VIEWER, orgId: null, role: null });
+        ctl.s.store.seedEvents(ctl.runId, [ctl.ev(0), ctl.ev(1)]);
+      },
+    });
+    ctl = l;
+    const res = await l.server.app.inject({
+      method: 'GET',
+      url: `/v1/runs/${l.runId}/events`,
+      headers: VIEWER,
+    });
+    expect(ids(res.body)).toEqual([0]);
+  });
+
+  it('does not re-check more often than every 5 seconds', async () => {
+    let clock = 0;
+    let polls = 0;
+    let ctl: { s: ReturnType<typeof setup>; runId: string; project: { id: string } };
+    const l = await live({
+      nowMs: () => clock,
+      sleep: async () => {
+        polls += 1;
+        clock += 1_000;
+        if (polls === 1) ctl.s.executor.sessions.delete('viewer');
+        if (polls === 2) {
+          ctl.s.store.seedRun(
+            ORG_A,
+            runOf(
+              ctl.runId,
+              ctl.project.id,
+              '90000000-0000-4000-8000-000000000002',
+              null,
+              'DELIVERED',
+            ),
+          );
+        }
+      },
+    });
+    ctl = l;
+    const res = await l.server.app.inject({
+      method: 'GET',
+      url: `/v1/runs/${l.runId}/events`,
+      headers: VIEWER,
+    });
+    // The session was deleted at 1 s, but the stream ran on until the terminal state.
+    expect(polls).toBe(2);
+    expect(ids(res.body)).toEqual([0]);
+  });
+
+  it('closes a stream after 15 minutes', async () => {
+    let clock = 0;
+    let polls = 0;
+    const l = await live({
+      nowMs: () => clock,
+      sleep: async () => {
+        polls += 1;
+        clock += 16 * 60_000;
+      },
+    });
+    const res = await l.server.app.inject({
+      method: 'GET',
+      url: `/v1/runs/${l.runId}/events`,
+      headers: VIEWER,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(polls).toBe(1);
+  });
+
+  it('answers 429 to the 4th concurrent stream of a user, and frees slots when streams end', async () => {
+    let sleeping = 0;
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const l = await live({
+      nowMs: () => 0,
+      sleep: async () => {
+        sleeping += 1;
+        await gate;
+      },
+    });
+    const open = () =>
+      l.server.app.inject({
+        method: 'GET',
+        url: `/v1/runs/${l.runId}/events`,
+        headers: VIEWER,
+      });
+    const first = [open(), open(), open()];
+    while (sleeping < 3) await new Promise((r) => setImmediate(r));
+    const fourth = await open();
+    expect(fourth.statusCode).toBe(429);
+    expect(fourth.json()).toMatchObject({ code: 'rate_limited' });
+    l.s.store.seedRun(
+      ORG_A,
+      runOf(l.runId, l.project.id, '90000000-0000-4000-8000-000000000002', null, 'DELIVERED'),
+    );
+    release();
+    for (const r of await Promise.all(first)) expect(r.statusCode).toBe(200);
+    const again = await open();
+    expect(again.statusCode).toBe(200);
+  });
+});
+
+describe('per-org run store on cancel', () => {
+  it('cancels in org B through org B store, and org A run id from org B is 404', async () => {
+    const s = setup();
+    const runA = '91000000-0000-4000-8000-00000000000a';
+    const runB = '91000000-0000-4000-8000-00000000000b';
+    const project = '91000000-0000-4000-8000-0000000000f1';
+    const spec = '91000000-0000-4000-8000-0000000000f2';
+    s.store.seedRun(ORG_A, runOf(runA, project, spec, null, 'BUILDING'));
+    s.store.seedRun(ORG_B, runOf(runB, project, spec, null, 'BUILDING'));
+    const stores = new Map<string, MemoryRunStore>([
+      [ORG_A, new MemoryRunStore([{ runId: runA, state: 'BUILDING', repairAttempts: 0 }])],
+      [ORG_B, new MemoryRunStore([{ runId: runB, state: 'BUILDING', repairAttempts: 0 }])],
+    ]);
+    const requested: string[] = [];
+    const server = buildApiServer({
+      executor: s.executor,
+      store: s.store,
+      runStoreFor: (orgId) => {
+        requested.push(orgId);
+        const found = stores.get(orgId);
+        if (!found) throw new Error('unknown org');
+        return found;
+      },
+      newRequestId: () => '91000000-0000-4000-8000-0000000000ff',
+    });
+    const foreign = await server.app.inject({
+      method: 'POST',
+      url: `/v1/runs/${runA}/cancel`,
+      headers: OTHER_ORG,
+    });
+    expect(foreign.statusCode).toBe(404);
+    expect(stores.get(ORG_A)?.get(runA)?.state).toBe('BUILDING');
+    const own = await server.app.inject({
+      method: 'POST',
+      url: `/v1/runs/${runB}/cancel`,
+      headers: OTHER_ORG,
+    });
+    expect(own.statusCode).toBe(200);
+    expect(stores.get(ORG_B)?.get(runB)?.state).toBe('CANCELLED');
+    expect(requested).toEqual([ORG_B]);
+  });
+});
+
+describe('same-origin check on writes', () => {
+  const payload = { name: 'x', slug: 'x', targetApp: 'x' };
+  const post = (s: ReturnType<typeof setup>, headers: Record<string, string>) =>
+    s.app.inject({ method: 'POST', url: '/v1/projects', headers: { ...OP, ...headers }, payload });
+
+  it('refuses cross-origin writes and allows same-origin ones', async () => {
+    const s = setup();
+    expect((await post(s, { host: 'engine.test', origin: 'https://evil.test' })).statusCode).toBe(
+      403,
+    );
+    expect((await post(s, { 'sec-fetch-site': 'cross-site' })).statusCode).toBe(403);
+    expect((await post(s, { 'sec-fetch-site': 'same-site' })).statusCode).toBe(403);
+    expect((await post(s, { host: 'engine.test', origin: 'not a url' })).statusCode).toBe(403);
+    expect(
+      (
+        await post(s, {
+          host: 'engine.test',
+          origin: 'http://engine.test',
+          'sec-fetch-site': 'same-origin',
+        })
+      ).statusCode,
+    ).toBe(201);
+  });
+
+  it('does not apply to GET', async () => {
+    const s = setup();
+    const res = await s.app.inject({
+      method: 'GET',
+      url: '/v1/projects',
+      headers: { ...OP, origin: 'https://evil.test', 'sec-fetch-site': 'cross-site' },
+    });
+    expect(res.statusCode).toBe(200);
   });
 });

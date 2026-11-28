@@ -63,6 +63,10 @@ export interface EngineApiStore {
   createRun(ctx: RouteContext, projectId: string, request: CreateRunRequest): Promise<Run | null>;
   getRun(ctx: RouteContext, runId: string): Promise<Run | null>;
 
+  /** User who started the run, or 
+ull when the Engine started it. Used for separation of duties. */
+  getRunStartedBy(ctx: RouteContext, runId: string): Promise<string | null>;
+
   /** Hash of the delivery content awaiting approval, or `null` if the run has none. */
   getDeliveryContentHash(ctx: RouteContext, runId: string): Promise<string | null>;
 

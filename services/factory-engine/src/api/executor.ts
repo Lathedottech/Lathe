@@ -1,5 +1,10 @@
+import { and, eq } from 'drizzle-orm';
 import {
   defineAction,
+  getPrincipal,
+  memberships,
+  parseOrgId,
+  withTenant,
   type Action,
   type ActionDeps,
   type ActionResult,
@@ -25,6 +30,12 @@ export interface RouteDefinition<S extends z.ZodType, T> {
   readonly handler: (ctx: RouteContext, input: z.output<S>) => Promise<T>;
 }
 
+/** Identity a long-lived response was authorized for. */
+export interface Authorized {
+  readonly userId: string;
+  readonly orgId: string;
+}
+
 export interface ExecutorRequest {
   readonly headers: Headers;
   readonly input: unknown;
@@ -41,10 +52,34 @@ export interface Executor {
   register<S extends z.ZodType, T>(
     definition: RouteDefinition<S, T>,
   ): (request: ExecutorRequest) => Promise<ActionResult<T>>;
+  /**
+   * Re-checks that the session still exists and the same user is still a member of the
+   * same org. Any failure, including an error, is `false`. Used by long-lived streams.
+   */
+  stillAuthorized(headers: Headers, who: Authorized): Promise<boolean>;
 }
 
 export function createFoundationExecutor(deps: ActionDeps, authz: Authz): Executor {
   return {
+    async stillAuthorized(headers, who) {
+      try {
+        const principal = await getPrincipal(deps.auth, headers);
+        if (!principal || principal.userId !== who.userId || principal.activeOrgId !== who.orgId) {
+          return false;
+        }
+        const orgId = parseOrgId(who.orgId);
+        const rows = await withTenant(deps.db, orgId, (tx) =>
+          tx
+            .select({ id: memberships.id })
+            .from(memberships)
+            .where(and(eq(memberships.orgId, orgId), eq(memberships.userId, principal.userId))),
+        );
+        return rows.length > 0;
+      } catch {
+        // Cannot be verified: deny.
+        return false;
+      }
+    },
     register<S extends z.ZodType, T>(definition: RouteDefinition<S, T>) {
       const action: Action<T> = defineAction(authz, {
         permission: definition.permission,

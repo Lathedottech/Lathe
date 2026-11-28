@@ -1,6 +1,7 @@
 export { ENGINE_PERMISSIONS, engineAuthz, type EnginePermission } from './authz.js';
 export {
   createFoundationExecutor,
+  type Authorized,
   type Executor,
   type ExecutorRequest,
   type RouteContext,
