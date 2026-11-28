@@ -21,6 +21,21 @@ export {
   type PlanSource,
 } from './build.js';
 export {
+  VERIFY_PATCH_FILE,
+  bindingHash,
+  runVerifyStep,
+  verifierSandboxSpec,
+  type PatchSource,
+  type VerifierHandle,
+  type VerifierSandboxContext,
+  type VerifierSandboxProvider,
+  type VerifyErrorReason,
+  type VerifyExecResult,
+  type VerifyRefusalReason,
+  type VerifyStepDeps,
+  type VerifyStepResult,
+} from './verify.js';
+export {
   PLAN_MAX_ATTEMPTS,
   buildPlannerPrompt,
   extractJsonObjects,
