@@ -60,8 +60,9 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  for (const id of [orgA, orgB])
-    await withTenant(db, id, (tx) => tx.delete(organizations).where(eq(organizations.id, id)));
+  // No organization cleanup: runs/projects now reference the org with RESTRICT
+  // (append-only evidence must survive deletes, #19), so the org rows are left
+  // behind. Test orgs use fresh UUIDs and are removed with the test database.
   await pool.end();
 });
 

@@ -37,3 +37,11 @@ Stacked on P3-02 (PR #20).
 
 ## 8. Recommended next task
 Persist evidence and approvals in Postgres under RLS, then wire into the orchestrator.
+
+## Fix round 1 (review of PR #21)
+- Partially completed: evidence chain, redaction and approvals exist in memory only. Persisting the chain (Postgres evidence table with prev_hash/hash, head stored on the run row) is not done; it needs a named follow-up task.
+- Typecheck fixed in `evidence.test.ts` (`head` passed only when defined; assertion unchanged).
+- `redact.ts` now redacts env-style names ending in password/secret/token/api key/private key/access key/`_key` (case-insensitive, boundary works after `_`), URL credentials, Basic and Cookie/Set-Cookie headers, JSON-text pairs, and values under secret-named keys in `redactValue`. `__proto__` keys are kept as data.
+- Regression tests: `src/evidence/redact-env.test.ts` (18 of 20 failed on the old code; all pass now), including fast-check over names, URL credentials and cookies.
+- Results: typecheck, lint exit 0; `pnpm test` 46 files, 609 passed, 5 skipped; `pnpm test:integration` 6 files, 35 passed (fresh DB lathe_f21).
+- Not fixed (non-blocking review items 4-7): self-approval check, rejections in InMemoryApprovals, hashContent type tag, canonicalJson rejecting non-JSON values.

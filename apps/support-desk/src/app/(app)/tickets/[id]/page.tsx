@@ -7,6 +7,7 @@ import { getTicket, listComments } from '../../../../server/tickets';
 import { CommentForm, TicketControls } from '../../../_components/forms';
 import ui from '../../../_components/ui.module.css';
 import { LoadError } from '../../_components/load-error';
+import { SlaDetail } from '../../_components/sla-badge';
 
 export const metadata: Metadata = { title: 'Ticket' };
 
@@ -38,6 +39,7 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
           {t.status} · {t.priority} · opened {new Date(t.createdAt).toLocaleString('en')}
         </p>
         {t.body && <p>{t.body}</p>}
+        <SlaDetail sla={t.sla} />
       </article>
       {perms.includes('tickets.triage') && (
         <section className={ui.card} aria-label="Ticket controls">
